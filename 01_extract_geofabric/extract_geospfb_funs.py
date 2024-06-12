@@ -18,22 +18,22 @@ import glob # built-in Python 3.10.2
 
 # Read the MERIT Basins geofabric
 # This part is static as it reads the entire MERIT geofabric (should only run once)
-def read_MERIT_basins(merit_basins_root_path):
+def read_MERIT_basins(merit_basins_root_path, code):
     merit_basins_geom_path = os.path.join(merit_basins_root_path, 'pfaf_level_02')
     merit_basins_nca_path = os.path.join(merit_basins_root_path, 'coastal_hillslopes')
     # Reading `MERIT-Basins` Geospatial Fabric Dataset
     ##########################
     ## `MERIT-Basins` Geospatial Layers
     cat_files = [
-        'cat_pfaf_71_MERIT_Hydro_v07_Basins_v01_bugfix1.shp',
+        f'cat_pfaf_{code}_MERIT_Hydro_v07_Basins_v01_bugfix1.shp',
     ]
     # rivers (river segments)
     riv_files = [
-        'riv_pfaf_71_MERIT_Hydro_v07_Basins_v01_bugfix1.shp',
+        f'riv_pfaf_{code}_MERIT_Hydro_v07_Basins_v01_bugfix1.shp',
     ]
     # non-contributing catchments (those without any river segments defined for them)
     nca_files = [
-        'hillslope_71_clean.shp',
+        f'hillslope_{code}_clean.shp',
     ]
 
     # reading in data in an iterative manner
@@ -90,7 +90,7 @@ def read_MERIT_basins(merit_basins_root_path):
 def extract_geofabric(catchments, rivers, outlet_point):
     ## Subsetting Sub-basins and River Segments Upstream of the outlet_point
     # find the sub-basin that this gauge intersects with:
-    # catchments[catchments.intersects(outlet_point)]
+    catchments[catchments.intersects(outlet_point)]
     # extract catchements and rivers
 
     extracted_catchments, extracted_rivers = gm.intersect_topology(
