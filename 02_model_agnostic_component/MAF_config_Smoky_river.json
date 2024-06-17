@@ -20,13 +20,13 @@
       ],
       "output-dir": "/scratch/mia725/calibration_workflow/Smoky_river/datatool-outputs",
       "start-date": "1980-01-01T13:00:00",
-      "end-date": "1981-12-30T12:00:00",
+      "end-date": "2018-12-30T12:00:00",
       "lat-lims": "",
       "lon-lims": "",
       "shape-file": "/scratch/mia725/calibration_workflow/Smoky_river/MERIT_geofabric/extracted_subbasins.shp",
       "model": "",
       "ensemble": "",
-      "prefix": "clipped_",
+      "prefix": "domain_",
       "email": "",
       "account": "rpp-kshook",
       "_flags": [
@@ -51,7 +51,7 @@
         "coords"
       ],
       "quantile": "",
-      "prefix": "clipped_",
+      "prefix": "domain_",
       "email": "",
       "account": "rpp-kshook",
       "fid": "COMID",
@@ -77,7 +77,7 @@
         "majority"
       ],
       "quantile": "",
-      "prefix": "clipped_",
+      "prefix": "domain_",
       "email": "",
       "account": "rpp-kshook",
       "fid": "COMID",

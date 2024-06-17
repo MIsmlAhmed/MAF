@@ -20,7 +20,7 @@
       ],
       "output-dir": "/scratch/mia725/calibration_workflow/Bow_Banff/datatool-outputs",
       "start-date": "1980-01-01T13:00:00",
-      "end-date": "1981-12-30T12:00:00",
+      "end-date": "2018-12-30T12:00:00",
       "lat-lims": "",
       "lon-lims": "",
       "shape-file": "/scratch/mia725/calibration_workflow/Bow_Banff/MERIT_geofabric/extracted_subbasins.shp",
