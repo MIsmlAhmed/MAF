@@ -194,8 +194,8 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
         combinations_set = set(combinations)
         combinations_set_all.update(combinations_set)
 
-    print(combinations_set_all)
-    print(len(combinations_set_all))
+    # print(combinations_set_all)
+    # print(len(combinations_set_all))
 
     data_list = [{'landcover': item[0], 'soil': item[1]} for item in combinations_set_all]
 
@@ -269,7 +269,7 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
 
     # Rename the columns based on the dictionary
     landcover_type_prepared = landcover_type_prepared.rename(columns=column_name_mapping)
-    landcover_type_prepared
+    # landcover_type_prepared
 
     #
     slc_columns = [col for col in landcover_type_prepared.columns if col.startswith('SLC_')]
@@ -278,13 +278,13 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     column_order = ['subid', 'maindown', 'area', 'latitude', 'longitude', 'elev_mean', 'slope_mean', 'rivlen'] + slc_columns + ['uparea']
 
     landcover_type_prepared = landcover_type_prepared[column_order]
-    landcover_type_prepared
+    # landcover_type_prepared
     #######################
     # sort geodata file
     landcover_type_prepared = landcover_type_prepared.sort_values(by='uparea').reset_index(drop=True)
     landcover_type_prepared = landcover_type_prepared.drop(columns=['uparea'])
     landcover_type_prepared.to_csv(path_to_save+'GeoData.txt', sep='\t', index=False)
-    landcover_type_prepared
+    # landcover_type_prepared
     #######################
     
     # write geoclass file
@@ -304,7 +304,7 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     combination['Soil layer depth 2'] = 0.493
     combination['Soil layer depth 3'] = 2.296
 
-    combination
+    # combination
     #######################
     # Add commented lines
     commented_lines = [
@@ -718,7 +718,7 @@ def write_hype_par_file(path_to_save):
         # Read the contents of the file
         file_contents = file.read()
         # Print the contents
-        print(file_contents)
+        # print(file_contents)
         
 ################################################################
 # write info and filedir files
@@ -731,7 +731,11 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
 
     with open(output_file, 'w') as file:
             file.write('./')
-
+    # create results directory
+    
+    if not os.path.isdir(path_to_save+'/results'):
+        os.makedirs(path_to_save+'/results')
+        
     ###########
 
     # Output par to a .txt file
@@ -754,11 +758,11 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out first text section
     s1= [
     """!! ----------------------------------------------------------------------------							
-    !!							
-    !! HYPE - Milk River & St. Mary's River HYPE
-    !!							
-    !! -----------------------------------------------------------------------------							
-    !! Check Indata during first runs (deactivate after first runs) """
+!!							
+!! HYPE - Milk River & St. Mary's River HYPE
+!!							
+!! -----------------------------------------------------------------------------							
+!! Check Indata during first runs (deactivate after first runs) """
     ]
 
     # write s1 in output file
@@ -780,11 +784,11 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out first text section
     s2= [
     """!!
-    !! -----------------------------------------------------------------------------							
-    !!						
-    !! Simulation settings:							
-    !!							
-    !! -----------------	 """
+!! -----------------------------------------------------------------------------							
+!!						
+!! Simulation settings:							
+!!							
+!! -----------------	 """
     ]
 
     # write s2 in output file
@@ -827,12 +831,12 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out s4
     s4= [
     """!! Soilstretch enable the use of soilcorr parameters (strech soildepths in layer 2 and 3)
-    steplength	1d							
-    !! -----------------------------------------------------------------------------							
-    !!							
-    !! Enable/disable optional input files
-    !!							
-    !! -----------------					"""
+steplength	1d							
+!! -----------------------------------------------------------------------------							
+!!							
+!! Enable/disable optional input files
+!!							
+!! -----------------					"""
     ]
 
     # write s4 in output file
@@ -876,40 +880,40 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out s5
     s5= [
     """!! -----------------------------------------------------------------------------							
-    !!							
-    !! Define model options (optional)
-    !!							
-    !! -----------------							
-    !!snowfallmodel:								
-    !!                  0 threshold temperature model							
-    !!                  1 inputdata (SFobs.txt)							
-    !!snowmeltmodel:							
-    !!                  0,1 temperature index             (with/without snowcover scaling)							
-    !!                  2   temperature + radiation index (with/without snowcover scaling)							
-    !!							
-    !!  snowevapmodel   0 off							
-    !!                  1 on							
-    !!                   							
-    !!  petmodel:  (potential evapotranspiration) (is shown in geodata for WWH)							
-    !!                  0 original HYPE temperature model (with Xobs epot replacement)							
-    !!                  1 original HYPE temperature model (without Xobs epot replacement)							
-    !!                  2 Modified Jensen-Haise 							
-    !!                  3 Modified Hargreaves-Samani							
-    !!                  4 Priestly-Taylor							
-    !!                  5 FAo Penman-Monteith							
-    !!							
-    !! lakeriverice:							
-    !!                  0 off							
-    !!                  1 on, old (simple) air-water heat exchange              (requires T2 water temperature model)							
-    !!                  2 on, new heatbalance model for air-water heat exchange (requires T2 water temperature model)							
-    !!							
-    !! substance T2     switching on the new water temperature trace model							
-    !!							
-    !! deepground       0   off    Deep groundwater (Aquifer) model options							
-    !!                  1,2 on
-    !! Glacierini	0 off 1 on	(1 used for statefile preparation)	
-    !! Floodplain		0, 1, 2, 3 (3 used for WWH)					
-    !! -----------------							"""
+!!							
+!! Define model options (optional)
+!!							
+!! -----------------							
+!!snowfallmodel:								
+!!                  0 threshold temperature model							
+!!                  1 inputdata (SFobs.txt)							
+!!snowmeltmodel:							
+!!                  0,1 temperature index             (with/without snowcover scaling)							
+!!                  2   temperature + radiation index (with/without snowcover scaling)							
+!!							
+!!  snowevapmodel   0 off							
+!!                  1 on							
+!!                   							
+!!  petmodel:  (potential evapotranspiration) (is shown in geodata for WWH)							
+!!                  0 original HYPE temperature model (with Xobs epot replacement)							
+!!                  1 original HYPE temperature model (without Xobs epot replacement)							
+!!                  2 Modified Jensen-Haise 							
+!!                  3 Modified Hargreaves-Samani							
+!!                  4 Priestly-Taylor							
+!!                  5 FAo Penman-Monteith							
+!!							
+!! lakeriverice:							
+!!                  0 off							
+!!                  1 on, old (simple) air-water heat exchange              (requires T2 water temperature model)							
+!!                  2 on, new heatbalance model for air-water heat exchange (requires T2 water temperature model)							
+!!							
+!! substance T2     switching on the new water temperature trace model							
+!!							
+!! deepground       0   off    Deep groundwater (Aquifer) model options							
+!!                  1,2 on
+!! Glacierini	0 off 1 on	(1 used for statefile preparation)	
+!! Floodplain		0, 1, 2, 3 (3 used for WWH)					
+!! -----------------							"""
     ]
 
     # write s5 in output file
@@ -935,16 +939,16 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out s6
     s6= [
     """!! ------------------------------------------------------------------------------------							
-    !!							
-    !! Define outputs
-    !!							
-    !! -----------------							
-    !! meanperiod 1=daymean, 2=weekmean, 3=monthmean, 4=yearmean, 5=total period mean							
-    !! output variables: see http://www.smhi.net/hype/wiki/doku.php?id=start:hype_file_reference:info.txt:variables 
-    !! -----------------							
-    !! BASIN outputs 
-    !! The present basins are some large rivers distributed over different continents
-    !! -----------------							"""
+!!							
+!! Define outputs
+!!							
+!! -----------------							
+!! meanperiod 1=daymean, 2=weekmean, 3=monthmean, 4=yearmean, 5=total period mean							
+!! output variables: see http://www.smhi.net/hype/wiki/doku.php?id=start:hype_file_reference:info.txt:variables 
+!! -----------------							
+!! BASIN outputs 
+!! The present basins are some large rivers distributed over different continents
+!! -----------------							"""
     ]
 
     # write s6 in output file
@@ -971,8 +975,8 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out s7
     s7= [
     """!! -----------------							
-    !! TIME outputs 
-    !! -----------------	"""
+!! TIME outputs 
+!! -----------------	"""
     ]
 
     # write s7 in output file
@@ -996,18 +1000,18 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out s8
     s8= [
     """!! -----------------							
-    !! MAP outputs
-    !! -----------------							
-    !! mapoutput variable	cout cprc ctmp
-    !! mapoutput decimals	3						
-    !! mapoutput meanperiod	5						
-    !! ------------------------------------------------------------------------------------							
-    !!							
-    !! Select criteria for model evaluation and automatic calibration
-    !!							
-    !! -----------------							
-    !! General settings
-    !! -----------------			"""
+!! MAP outputs
+!! -----------------							
+!! mapoutput variable	cout cprc ctmp
+!! mapoutput decimals	3						
+!! mapoutput meanperiod	5						
+!! ------------------------------------------------------------------------------------							
+!!							
+!! Select criteria for model evaluation and automatic calibration
+!!							
+!! -----------------							
+!! General settings
+!! -----------------			"""
     ]
 
     # write s8 in output file
@@ -1031,8 +1035,8 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # write out s9
     s9= [
     """!! -----------------			
-    !! Criterion-specific settings
-    !! -----------------				"""
+!! Criterion-specific settings
+!! -----------------				"""
     ]
 
     # write s9 in output file

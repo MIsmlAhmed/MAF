@@ -1,0 +1,92 @@
+{
+  "exec": {
+    "gis": "/home/mia725/github-repos/gistool/extract-gis.sh"
+  },
+
+  "args": {
+    "gis": [{
+      "dataset": "landsat",
+      "dataset-dir": "/project/6008034/Climate_Forcing_Data/geospatial-data/Landsat",
+      "variable": "land-cover",
+      "start-date": "2020",
+      "end-date": "2020",
+      "output-dir": "/scratch/mia725/SCRB/gistool-outputs",
+      "lat-lims": "",
+      "lon-lims": "",
+      "shape-file": "/scratch/mia725/SCRB/MERIT_geofabric/extracted_subbasins.shp",
+      "print-geotiff": "true",
+      "stat": [
+        "frac",
+        "majority",
+        "coords"
+      ],
+      "quantile": "",
+      "prefix": "domain_",
+      "email": "",
+      "account": "rpp-kshook",
+      "fid": "COMID",
+      "_flags": [
+	"include-na",
+        "submit-job",
+        "parsable"
+      ]
+    },
+
+    {
+      "dataset": "soil_class",
+      "dataset-dir": "/project/6008034/Climate_Forcing_Data/geospatial-data/soil_classes",
+      "variable": "soil_classes",
+      "start-date": "",
+      "end-date": "",
+      "output-dir": "/scratch/mia725/SCRB/gistool-outputs",
+      "lat-lims": "",
+      "lon-lims": "",
+      "shape-file": "/scratch/mia725/SCRB/MERIT_geofabric/extracted_subbasins.shp",
+      "print-geotiff": "true",
+      "stat": [
+        "majority"
+      ],
+      "quantile": "",
+      "prefix": "domain_",
+      "email": "",
+      "account": "rpp-kshook",
+      "fid": "COMID",
+      "_flags": [
+	"include-na",
+        "submit-job",
+        "parsable"
+      ]
+    },
+    
+    {
+      "dataset": "merit-hydro",
+      "dataset-dir": "/project/rpp-kshook/CompHydCore/merit_hydro/raw_data/",
+      "variable": "elv,hnd",
+      "start-date": "",
+      "end-date": "",
+      "output-dir": "/scratch/mia725/SCRB/gistool-outputs/",
+      "lat-lims": "",
+      "lon-lims": "",
+      "shape-file": "/scratch/mia725/SCRB/MERIT_geofabric/extracted_subbasins.shp",
+      "print-geotiff": "true",
+      "stat": [
+        "min",
+        "max",
+        "mean",
+        "median"
+      ],
+      "prefix": "domain_",
+      "email": "",
+      "_flags": [
+        "include-na",
+        "submit-job",
+        "parsable"
+      ]
+    }
+    ]
+
+  },
+  "order": {
+    "gis": 1
+  }
+}
