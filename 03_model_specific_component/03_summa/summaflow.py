@@ -4,6 +4,7 @@
 import xarray as xr
 import pint_xarray
 import glob
+import netCDF4 as nc4
 import os
 import pandas as pd
 from   easymore import Easymore
@@ -21,7 +22,7 @@ def write_summa_forcing(path_to_save, nc_file_source):
     ds = xr.open_dataset(nc_file_source)
 
     # time step of the data in seconds
-    ds['data_step'] = (ds['time'][1].values - ds['time'][0].values).astype('timedelta64[s]') #.astype(int)
+    ds['data_step'] = (ds['time'][1].values - ds['time'][0].values).astype('timedelta64[s]').astype(int)
 
     # rename the dictionary
     rename_dictionary = {'subbasin': 'hruId',
@@ -45,8 +46,24 @@ def write_summa_forcing(path_to_save, nc_file_source):
         os.remove(path_to_save+'summa_forcing.nc')
 
     ds.to_netcdf(path_to_save+'summa_forcing.nc')
+
+    ds.close()
+
+    # replace T in the time unit with space
+
+    ncid = nc4.Dataset(path_to_save + 'summa_forcing.nc', 'r+')
     
-    return(ds)
+    # Access the 'units' attribute and replace 'T' with a space
+    units_attribute = ncid['time'].units
+    units_attribute = units_attribute.replace('T', ' ')
+    
+    # Update the 'units' attribute in the netCDF file
+    ncid['time'].setncattr('units', units_attribute)
+    
+    # Close the netCDF file
+    ncid.close()
+    
+    return(xr.open_dataset(path_to_save + 'summa_forcing.nc'))
 ############################
 def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output):
     # read forcing file
@@ -186,6 +203,14 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     
     attr ['mHeight']        = xr.DataArray(np.ones(len(geofabric['COMID']))*40, dims=('hru'),
                                           attrs={'long_name': 'Measurement height above bare ground', 'units': 'm'})
+
+    attr ['longitude'] = xr.DataArray(soil_landuse_stats['lon'], dims=('hru'),
+                                      attrs={'long_name': 'Longitude of HRU\'s centriod point', 'units': 'decimal degree east'})
+    
+    attr ['latitude'] = xr.DataArray(soil_landuse_stats['lat'], dims=('hru'),
+                                     attrs={'long_name': 'Latitude of HRU\'s centriod point', 'units': 'decimal degree north'})
+    # drop the hru variable from the file
+    attr = attr.drop_vars('hru')
     
     # write attribute file
     if os.path.isfile(path_to_save+'summa_zLocalAttributes.nc'):
@@ -270,14 +295,14 @@ def write_summa_filemanager(path_to_save, forcing):
     start_date = pd.to_datetime(forcing['time'][0].values).strftime('%Y-%m-%d %H:%M')
     end_date = pd.to_datetime(forcing['time'][-1].values).strftime('%Y-%m-%d %H:%M')
 
-    template_string="""controlVersion       'summa_FILE_MANAGER_V3.0.0' !  fman_ver 
+    template_string="""controlVersion       'SUMMA_FILE_MANAGER_V3.0.0' !  fman_ver 
 simStartTime         '{start_date}' ! 
 simEndTime           '{end_date}' ! 
 tmZoneInfo           'localTime' ! 
 settingsPath         './' !  setting_path
 forcingPath          './' !  input_path
 outputPath           './results/' !  output_path
-decisionsFile        './summa_zDecisions_celia1990.txt' !  decision
+decisionsFile        './summa_zDecisions.txt' !  decision
 outputControlFile    './Model_Output.txt' !  OUTPUT_CONTROL
 globalHruParamFile   './summa_zLocalParamInfo.txt' !  local_par
 globalGruParamFile   './summa_zBasinParamInfo.txt' !  basin_par
