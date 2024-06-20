@@ -1,10 +1,9 @@
-# summaflow: a collection of functions to create SUMMA input files
+# summaflow: a collection of functions to create summa input files
 # load the needed packages
 # packages are loaded
 import xarray as xr
 import pint_xarray
 import glob
-import netCDF4 as nc4
 import os
 import pandas as pd
 from   easymore import Easymore
@@ -22,7 +21,7 @@ def write_summa_forcing(path_to_save, nc_file_source):
     ds = xr.open_dataset(nc_file_source)
 
     # time step of the data in seconds
-    ds['data_step'] = (ds['time'][1].values - ds['time'][0].values).astype('timedelta64[s]').astype(int)
+    ds['data_step'] = (ds['time'][1].values - ds['time'][0].values).astype('timedelta64[s]') #.astype(int)
 
     # rename the dictionary
     rename_dictionary = {'subbasin': 'hruId',
@@ -42,30 +41,16 @@ def write_summa_forcing(path_to_save, nc_file_source):
     ds = ds.transpose('time', 'hru') # to make sure the varibales are transposed
     
     # save file
-    if os.path.isfile(path_to_save+'SUMMA_forcing.nc'):
-        os.remove(path_to_save+'SUMMA_forcing.nc')
+    if os.path.isfile(path_to_save+'summa_forcing.nc'):
+        os.remove(path_to_save+'summa_forcing.nc')
 
-    ds.to_netcdf(path_to_save+'SUMMA_forcing.nc')
+    ds.to_netcdf(path_to_save+'summa_forcing.nc')
     
-    # replace T in the time unit with space
-
-    ncid = nc4.Dataset(path_to_save + 'SUMMA_forcing.nc', 'r+')
-
-    # Access the 'units' attribute and replace 'T' with a space
-    units_attribute = ncid['time'].units
-    units_attribute = units_attribute.replace('T', ' ')
-
-    # Update the 'units' attribute in the netCDF file
-    ncid['time'].setncattr('units', units_attribute)
-    
-    # Close the netCDF file
-    ncid.close()
-    # return the forcing file
-    return(xr.open_dataset(path_to_save + 'SUMMA_forcing.nc'))
+    return(ds)
 ############################
 def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output):
     # read forcing file
-    forcing = xr.open_dataset(os.path.join(path_to_save,'SUMMA_forcing.nc'))
+    forcing = xr.open_dataset(os.path.join(path_to_save,'summa_forcing.nc'))
 
     # prepare data by merging the spatial fields into one dataframe
     # read merit geofabric
@@ -165,7 +150,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     # Create a new xarray dataset
     attr = xr.Dataset()
     
-    # prepare for the SUMMA attr file
+    # prepare for the summa attr file
     attr ['hruId']          = xr.DataArray(geofabric['COMID'].values, dims=('hru'), 
                                            attrs={'long_name': 'Index of hydrological response units (HRU)', 'units': '-'})
     
@@ -203,10 +188,10 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
                                           attrs={'long_name': 'Measurement height above bare ground', 'units': 'm'})
     
     # write attribute file
-    if os.path.isfile(path_to_save+'SUMMA_attributes.nc'):
-        os.remove(path_to_save+'SUMMA_attributes.nc')
+    if os.path.isfile(path_to_save+'summa_zLocalAttributes.nc'):
+        os.remove(path_to_save+'summa_zLocalAttributes.nc')
     
-    attr.to_netcdf(path_to_save+'SUMMA_attributes.nc')
+    attr.to_netcdf(path_to_save+'summa_zLocalAttributes.nc')
     # return the attribute file
     return(attr)
 #################################
@@ -224,8 +209,96 @@ def write_summa_paramtrial(attr, path_to_save):
     # Add variables to the dataset
     ds['hruId'] = xr.DataArray(attr['hruId'].values, dims=('hru'), attrs={'units': '-', 'long_name': 'Index of hydrological response unit (HRU)'})
     ds
-    if os.path.isfile(path_to_save+'SUMMA_ParamsTrial.nc'):
-        os.remove(path_to_save+'SUMMA_ParamsTrial.nc')
+    if os.path.isfile(path_to_save+'summa_zParamTrial.nc'):
+        os.remove(path_to_save+'summa_zParamTrial.nc')
     
-    ds.to_netcdf(path_to_save+'SUMMA_ParamsTrial.nc')
+    ds.to_netcdf(path_to_save+'summa_zParamTrial.nc')
     return(ds)
+
+#################################
+def write_summa_initial_conditions(attr, soil_mLayerDepth, path_to_save):
+    
+    # Define dimensions
+    hru_size = len(attr['hruId'].values)
+    scalarv_size = 1
+    midSoil_size = midToto_size = len(soil_mLayerDepth)
+    ifcToto_size = midSoil_size + 1
+
+    # Create a new xarray dataset
+    ds = xr.Dataset()
+    
+    # Add dimensions to the dataset
+    ds['hru'] = xr.DataArray(attr['hruId'].values, dims=('hru'), attrs={'units': '-'})
+    ds['midSoil'] = xr.DataArray(range(midSoil_size), dims=('midSoil'))
+    ds['midToto'] = xr.DataArray(range(midToto_size), dims=('midToto'))
+    ds['ifcToto'] = xr.DataArray(range(ifcToto_size), dims=('ifcToto'))
+    ds['scalarv'] = xr.DataArray(range(scalarv_size), dims=('scalarv'))
+    
+    # Add variables to the dataset
+    ds['hruId'] = xr.DataArray(attr['hruId'].values, dims=('hru'), attrs={'units': '-', 'long_name': 'Index of hydrological response unit (HRU)'})
+    ds['dt_init'] = xr.DataArray([[3600.0] * hru_size], dims=('scalarv', 'hru'))
+    ds['nSoil'] = xr.DataArray([[midSoil_size] * hru_size], dims=('scalarv', 'hru'))
+    ds['nSnow'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarCanopyIce'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarCanopyLiq'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarSnowDepth'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarSWE'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarSfcMeltPond'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarAquiferStorage'] = xr.DataArray([[1.0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarSnowAlbedo'] = xr.DataArray([[0] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarCanairTemp'] = xr.DataArray([[283.16] * hru_size], dims=('scalarv', 'hru'))
+    ds['scalarCanopyTemp'] = xr.DataArray([[283.16] * hru_size], dims=('scalarv', 'hru'))
+    ds['mLayerTemp'] = xr.DataArray([[283.16] * hru_size ] * midToto_size , dims=('midToto', 'hru'))
+    ds['mLayerVolFracIce'] = xr.DataArray([[0] * hru_size] * midToto_size, dims=('midToto', 'hru'))
+    ds['mLayerVolFracLiq'] = xr.DataArray([[0.2] * hru_size] * midToto_size, dims=('midToto', 'hru'))
+    ds['mLayerMatricHead'] = xr.DataArray([[-1] * hru_size] * midToto_size, dims=('midSoil', 'hru'))
+    ds['iLayerHeight'] = xr.DataArray(np.transpose([[0]+list(np.cumsum(soil_mLayerDepth))] * hru_size) , dims=('ifcToto', 'hru'))
+    ds['mLayerDepth'] = xr.DataArray(np.transpose([soil_mLayerDepth] * hru_size), dims=('midToto',  'hru'))
+    
+    
+    if os.path.isfile(path_to_save+'summa_zInitialCond.nc'):
+        os.remove(path_to_save+'summa_zInitialCond.nc')
+    
+    ds.to_netcdf(path_to_save+'summa_zInitialCond.nc')
+    
+    return(ds)
+
+##################################
+def write_summa_filemanager(path_to_save, forcing):
+
+
+    start_date = pd.to_datetime(forcing['time'][0].values).strftime('%Y-%m-%d %H:%M')
+    end_date = pd.to_datetime(forcing['time'][-1].values).strftime('%Y-%m-%d %H:%M')
+
+    template_string="""controlVersion       'summa_FILE_MANAGER_V3.0.0' !  fman_ver 
+simStartTime         '{start_date}' ! 
+simEndTime           '{end_date}' ! 
+tmZoneInfo           'localTime' ! 
+settingsPath         './' !  setting_path
+forcingPath          './' !  input_path
+outputPath           './results/' !  output_path
+decisionsFile        './summa_zDecisions_celia1990.txt' !  decision
+outputControlFile    './Model_Output.txt' !  OUTPUT_CONTROL
+globalHruParamFile   './summa_zLocalParamInfo.txt' !  local_par
+globalGruParamFile   './summa_zBasinParamInfo.txt' !  basin_par
+attributeFile        './summa_zLocalAttributes.nc' !  local_attr
+trialParamFile       './summa_zParamTrial.nc' !  para_trial
+forcingListFile      './summa_zForcingFileList.txt' !  forcing_list
+initConditionFile    './summa_zInitialCond.nc' !  initial_cond
+outFilePrefix        'myTest' !  output_prefix
+vegTableFile         'VEGPARM.TBL' ! 
+soilTableFile        'SOILPARM.TBL' ! 
+generalTableFile     'GENPARM.TBL' ! 
+noahmpTableFile      'MPTABLE.TBL' ! 
+! history written by summaflow
+"""
+
+    # Replace the placeholder with the actual start date using an f-string
+    fileManager = template_string.format(start_date=start_date, end_date = end_date)
+
+
+    # Optionally, write the formatted string to a file
+    output_file = path_to_save+'summa_fileManager.txt'
+    with open(output_file, 'w') as file:
+        file.write(fileManager)
+
