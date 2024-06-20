@@ -327,3 +327,9 @@ noahmpTableFile      'MPTABLE.TBL' !
     with open(output_file, 'w') as file:
         file.write(fileManager)
 
+###############################
+def copy_summa_static_files(path_to_save):
+    os.system("cp -r setting_files/* "+ path_to_save)
+    # create results firectory
+    if not os.path.isdir(path_to_save+'results/'):
+        os.makedirs(path_to_save+'results/')
