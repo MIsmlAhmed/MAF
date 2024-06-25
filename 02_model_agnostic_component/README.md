@@ -10,6 +10,8 @@ the link of each tool!
 
 # Run the model agnostic
 
+1. YOU MUST RUN THIS FROM THE TERMINAL (login node). DO NOT USE `jupyter hub`'s terminal for this.
+
 1. load the needed modules
     
     module restore scimods

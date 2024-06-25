@@ -183,7 +183,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     attr ['elevation']      = xr.DataArray(geofabric['mean_elev'].values, dims=('hru'),
                                           attrs={'long_name': 'Elevation of HRU\'s centriod point', 'units': 'm'})
     
-    attr ['HRUarea']        = xr.DataArray(geofabric['unitarea'].values, dims=('hru'),
+    attr ['HRUarea']        = xr.DataArray(geofabric['unitarea'].values*1e6, dims=('hru'),
                                           attrs={'long_name': 'Area of each HRU', 'units': 'm^2'})
     
     attr ['tan_slope']      = xr.DataArray(geofabric['slope'].values, dims=('hru'),
