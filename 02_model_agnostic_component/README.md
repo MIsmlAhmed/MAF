@@ -14,17 +14,17 @@ the link of each tool!
 
 1. load the needed modules
     
-    module restore scimods
+       module restore scimods
 
 2. load python environments (that contains all needed packages)
     
-    source $HOME/virtual-envs/scienv/bin/activate
+       source $HOME/virtual-envs/scienv/bin/activate
     
 3. run the model agnostic from the login node (terminal) not from JupyterHub
 
-   ./model-agnostic.sh config_file.json
+       ./model-agnostic.sh config_file.json
    
-4. run `test_01.ipynb` and `test_02.ipynb` to clean up any landcover or soil types with very samll fractions
+4. run `02_clean_up_and_checks.ipynb` to clean up any landcover or soil types with very samll fractions
     
 
 # Workflows
