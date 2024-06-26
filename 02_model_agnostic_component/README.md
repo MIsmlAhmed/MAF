@@ -22,7 +22,7 @@ the link of each tool!
     
 3. run the model agnostic from the login node (terminal) not from JupyterHub
 
-       ./model-agnostic.sh config_file.json
+       ./model-agnostic.sh <config_file.json>
    
 4. run `02_clean_up_and_checks.ipynb` to clean up any landcover or soil types with very samll fractions
     

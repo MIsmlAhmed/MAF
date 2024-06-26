@@ -1,5 +1,0 @@
-Restoring modules from user's scimods
-/home/mia725/virtual-envs/scienv/lib/python3.10/site-packages/xarray/core/accessor_dt.py:72: FutureWarning: Index.ravel returning ndarray is deprecated; in a future version this will return a view on self.
-  values_as_series = pd.Series(values.ravel(), copy=False)
-Running MESH flow
-Finished processing MESH inputs
