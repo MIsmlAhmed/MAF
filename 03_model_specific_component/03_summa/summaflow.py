@@ -13,6 +13,26 @@ import geopandas   as      gpd
 
 
 ############################
+# sort geofabric from upstream to downstream
+def sort_geofabric(geofabric):
+    # find the subbasin order
+    geofabric['n_ds_subbasins'] = 0
+    for index, row in geofabric.iterrows():
+        n_ds_subbasins = 0
+        nextID = row['NextDownID']
+        nextID_index = np.where(geofabric['COMID']==nextID)[0]
+
+        while (len(nextID_index>0) or nextID > 0) :
+            n_ds_subbasins += 1
+            nextID = geofabric['NextDownID'][nextID_index[0]]
+            nextID_index = np.where(geofabric['COMID']==nextID)[0]
+            
+        geofabric.loc[index, 'n_ds_subbasins']= n_ds_subbasins
+
+    # Sort the DataFrame by 'n_ds_subbasins' in descending order
+    geofabric = geofabric.sort_values(by='n_ds_subbasins', ascending=False, ignore_index=True)
+    return geofabric
+############################
 # write summa forcing from MESH forcing
 def write_summa_forcing(path_to_save, nc_file_source):
     if not os.path.isdir(path_to_save):
@@ -65,26 +85,18 @@ def write_summa_forcing(path_to_save, nc_file_source):
     
     return(xr.open_dataset(path_to_save + 'summa_forcing.nc'))
 ############################
-def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output):
-    # read forcing file
-    forcing = xr.open_dataset(os.path.join(path_to_save,'summa_forcing.nc'))
-
+def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output, frac_threshold, hru_discr, write_mizuroute_domain):
     # prepare data by merging the spatial fields into one dataframe
     # read merit geofabric
     # read rivers
     riv = gpd.read_file(rivers_shapefile)
-    # reorder river to follow the same order as the hru in the forcing file
-    riv = riv.set_index('COMID').loc[forcing['hru']].reset_index()
-    
+
     # read catchments
     cat = gpd.read_file(subbasins_shapefile)
-    # reorder river to follow the same order as the hru in the forcing file
-    cat = cat.set_index('COMID').loc[forcing['hru']].reset_index()
 
     # read elevation stats
     elev_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_elv.csv'))
-    # reorder df to follow the same order as the hru in the forcing file
-    elev_stats = elev_stats.set_index('COMID').loc[forcing['hru']].reset_index()
+
     #rename columns except COMID
     elev_stats = elev_stats.rename(columns=lambda x: x + '_elev' if x != 'COMID' else x)
 
@@ -93,19 +105,22 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     geofabric = geofabric.merge(elev_stats, on='COMID')
     geofabric = geofabric.drop(columns=['geometry_x', 'hillslope_x', 'hillslope_y', 'geometry_y'])
 
+    # sort geofabric from upstream to downstream
+    geofabric = sort_geofabric(geofabric)
+
     # read soil and landcover data
     soil_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_soil_classes.csv'))
     # reorder df to follow the same order as the hru in the forcing file
-    soil_stats = soil_stats.set_index('COMID').loc[forcing['hru']].reset_index()
+    soil_stats = soil_stats.set_index('COMID').loc[geofabric['COMID']].reset_index()
     # rename majority column
     soil_stats = soil_stats.rename(columns={'majority': 'soil_majority'})
-    
+
     landuse_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv'))
     # reorder df to follow the same order as the hru in the forcing file
-    landuse_stats = landuse_stats.set_index('COMID').loc[forcing['hru']].reset_index()
+    landuse_stats = landuse_stats.set_index('COMID').loc[geofabric['COMID']].reset_index()
     # rename majority column
     landuse_stats = landuse_stats.rename(columns={'majority': 'landuse_majority'})
-    
+
     soil_landuse_stats = landuse_stats.merge(soil_stats, on='COMID')
 
     ######---------------------------
@@ -134,10 +149,10 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
         (18, 'Water', 16, 'Water Bodies'),
         (19, 'Snow and Ice', 24, 'Snow or Ice')
     ]
-    
+
     # Create DataFrame
     matched_lanuse = pd.DataFrame(matched_landuse, columns=['NALCMS_ID', 'NALCMS_Description', 'USGS_ID', 'USGS_Description'])
-    
+
     # Create a dictionary for mapping NALCMS IDs to USGS IDs
     nalcms_to_usgs = dict(zip(matched_lanuse['NALCMS_ID'], matched_lanuse['USGS_ID']))
 
@@ -157,66 +172,137 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
         (11, 'loamy sand', 4, 'LOAMY SAND'),
         (12, 'sand', 5, 'SAND')
     ]
-    
+
     # Create DataFrame
     matched_soils = pd.DataFrame(matched_soils, columns=['Soilgrid_ID', 'Soilgrid_Description', 'ROSETTA_ID', 'ROSETTA_Description'])
     # Create a dictionary for mapping Soilgrid IDs to ROSETTA IDs
     soilgrid_to_rosetta = dict(zip(matched_soils['Soilgrid_ID'], matched_soils['ROSETTA_ID']))
     ######---------------------------
+    
+    # get the fraction for land cover for each row
+    hru_info = pd.DataFrame(columns=['hru2gruId', 'hruId'])
+    k = 1
+    for index, row in soil_landuse_stats.iterrows():
+        # hru discretization is based on landcover (default)
+        if(hru_discr=='landcover'):
+            fractions = [col for col in soil_landuse_stats.columns if col.startswith('frac') and row[col] > frac_threshold]
+            frac_vals= row[fractions].to_list()
+            # remove frac_ from the list
+            fractions = [col.split('_')[1] for col in fractions]
+            fractions = [int(name) for name in fractions]
+            frac_number = fractions
 
+        # check if the user wants 1 hru per gru (no spatial discretization )
+        if(hru_discr == '1hru_gru'):
+            # use max fraction as the dominant landcover
+            frac_vals = [1]
+            frac_number = [soil_landuse_stats['landuse_majority'][index]]
+
+        # Normalize the array so that the sum of its values equals 1
+        normalized_frac_vals = frac_vals / np.sum(frac_vals)
+        nhru =len(frac_number)
+        # hru2gruId = np.repeat(soil_landuse_stats['COMID'][index], nhru)
+        # hruId = np.arange(nhru)+k
+        # HRUarea = normalized_frac_vals * cat['unitarea'][index]
+        # vegTypeIndex = frac_number
+        # construct the gru/hru df
+        hru_info = pd.concat([hru_info, pd.DataFrame({
+                                        'hru2gruId': np.repeat(soil_landuse_stats['COMID'][index], nhru),
+                                        'hruId': np.arange(nhru)+k,
+                                        'downHRUindex': np.zeros(nhru),
+                                        'HRUarea': normalized_frac_vals * geofabric['unitarea'][index]*1e6,
+                                        'vegTypeIndex': list(map(nalcms_to_usgs.get, frac_number)),
+                                        'soilTypeIndex': np.repeat(list(map(soilgrid_to_rosetta.get, [soil_landuse_stats['soil_majority'][index]])), nhru),
+                                        'slopeTypeIndex': np.ones(nhru),
+                                        'elevation': np.repeat(geofabric['mean_elev'][index], nhru),
+                                        'contourLength': normalized_frac_vals * geofabric['lengthkm'][index]*1000,
+                                        'latitude': np.repeat(soil_landuse_stats['lat'][index], nhru),
+                                        'longitude': np.repeat(soil_landuse_stats['lon'][index], nhru),
+                                        'mHeight': np.ones(nhru)*40,
+                                        'tan_slope': np.repeat(geofabric['slope'][index], nhru),
+                                        })], ignore_index=True)
+        k += nhru
+
+    # hru_info
     # Create a new xarray dataset
     attr = xr.Dataset()
-    
-    # prepare for the summa attr file
-    attr ['hruId']          = xr.DataArray(geofabric['COMID'].values, dims=('hru'), 
-                                           attrs={'long_name': 'Index of hydrological response units (HRU)', 'units': '-'})
-    
-    attr ['gruId']          = xr.DataArray(geofabric['COMID'].values, dims=('gru'),
-                                          attrs={'long_name': 'Index of group of response unit (GRU)', 'units': '-'})
-    
-    attr ['hru2gruId']      = xr.DataArray(geofabric['COMID'].values, dims=('hru'),
-                                          attrs={'long_name': 'Index of GRU to which the HRU belongs', 'units': '-'})
-    
-    attr ['downHRUindex']   = xr.DataArray(np.zeros(len(geofabric['COMID'])), dims=('hru'),
-                                          attrs={'long_name': 'Index of downslope HRU (0 = basin outlet)', 'units': '-'}).astype(int)
-    
-    attr ['elevation']      = xr.DataArray(geofabric['mean_elev'].values, dims=('hru'),
-                                          attrs={'long_name': 'Elevation of HRU\'s centriod point', 'units': 'm'})
-    
-    attr ['HRUarea']        = xr.DataArray(geofabric['unitarea'].values*1e6, dims=('hru'),
-                                          attrs={'long_name': 'Area of each HRU', 'units': 'm^2'})
-    
-    attr ['tan_slope']      = xr.DataArray(geofabric['slope'].values, dims=('hru'),
-                                          attrs={'long_name': 'Average tangent slope of HRU', 'units': 'm/m'})
-    
-    attr ['contourLength']  = xr.DataArray(geofabric['lengthkm'].values*1000, dims=('hru'),
-                                            attrs={'long_name': 'ContourLength of HRU', 'units': 'm'})
-    
-    attr ['slopeTypeIndex'] = xr.DataArray(np.ones(len(geofabric['COMID'])), dims=('hru'),
-                                           attrs={'long_name': 'Index defining slope', 'units': '-'}).astype(int)
-    
-    attr ['soilTypeIndex']  = xr.DataArray(list(map(soilgrid_to_rosetta.get, soil_landuse_stats['soil_majority'].values)), dims=('hru'),
-                                            attrs={'long_name': 'Index defining soil type - ROSETTA', 'units': '-'}).astype(int)
-    
-    attr ['vegTypeIndex']   = xr.DataArray(list(map(nalcms_to_usgs.get, soil_landuse_stats['landuse_majority'].values)), dims=('hru'),
-                                           attrs={'long_name': 'Index defining vegetation type - USGS', 'units': '-'}).astype(int)
-    
-    attr ['mHeight']        = xr.DataArray(np.ones(len(geofabric['COMID']))*40, dims=('hru'),
-                                          attrs={'long_name': 'Measurement height above bare ground', 'units': 'm'})
 
-    attr ['longitude'] = xr.DataArray(soil_landuse_stats['lon'], dims=('hru'),
-                                      attrs={'long_name': 'Longitude of HRU\'s centriod point', 'units': 'decimal degree east'})
-    
-    attr ['latitude'] = xr.DataArray(soil_landuse_stats['lat'], dims=('hru'),
-                                     attrs={'long_name': 'Latitude of HRU\'s centriod point', 'units': 'decimal degree north'})
-    # drop the hru variable from the file
-    attr = attr.drop_vars('hru')
-    
+    # prepare for the summa attr file
+    attr ['hruId']          = xr.DataArray(hru_info['hruId'].values, dims=('hru'), 
+                                            attrs={'long_name': 'Index of hydrological response units (HRU)', 'units': '-'})
+
+    attr ['gruId']          = xr.DataArray(geofabric['COMID'].values, dims=('gru'),
+                                            attrs={'long_name': 'Index of group of response unit (GRU)', 'units': '-'})
+
+    attr ['hru2gruId']      = xr.DataArray(hru_info['hru2gruId'].values, dims=('hru'),
+                                            attrs={'long_name': 'Index of GRU to which the HRU belongs', 'units': '-'})
+
+    attr ['downHRUindex']   = xr.DataArray(hru_info['downHRUindex'].values, dims=('hru'),
+                                            attrs={'long_name': 'Index of downslope HRU (0 = basin outlet)', 'units': '-'}).astype(int)
+
+    attr ['elevation']      = xr.DataArray(hru_info['elevation'].values, dims=('hru'),
+                                            attrs={'long_name': 'Elevation of HRU\'s centriod point', 'units': 'm'})
+
+    attr ['HRUarea']        = xr.DataArray(hru_info['HRUarea'].values, dims=('hru'),
+                                            attrs={'long_name': 'Area of each HRU', 'units': 'm^2'})
+
+    attr ['tan_slope']      = xr.DataArray(hru_info['tan_slope'].values, dims=('hru'),
+                                            attrs={'long_name': 'Average tangent slope of HRU', 'units': 'm/m'})
+
+    attr ['contourLength']  = xr.DataArray(hru_info['contourLength'].values, dims=('hru'),
+                                            attrs={'long_name': 'ContourLength of HRU', 'units': 'm'})
+
+    attr ['slopeTypeIndex'] = xr.DataArray(hru_info['slopeTypeIndex'].values, dims=('hru'),
+                                            attrs={'long_name': 'Index defining slope', 'units': '-'}).astype(int)
+
+    attr ['soilTypeIndex']  = xr.DataArray(hru_info['soilTypeIndex'].values, dims=('hru'),
+                                            attrs={'long_name': 'Index defining soil type - ROSETTA', 'units': '-'}).astype(int)
+
+    attr ['vegTypeIndex']   = xr.DataArray(hru_info['vegTypeIndex'].values, dims=('hru'),
+                                            attrs={'long_name': 'Index defining vegetation type - USGS', 'units': '-'}).astype(int)
+
+    attr ['mHeight']        = xr.DataArray(hru_info['mHeight'].values, dims=('hru'),
+                                            attrs={'long_name': 'Measurement height above bare ground', 'units': 'm'})
+
+    attr ['longitude'] = xr.DataArray(hru_info['longitude'].values, dims=('hru'),
+                                        attrs={'long_name': 'Longitude of HRU\'s centriod point', 'units': 'decimal degree east'})
+
+    attr ['latitude'] = xr.DataArray(hru_info['latitude'].values, dims=('hru'),
+                                        attrs={'long_name': 'Latitude of HRU\'s centriod point', 'units': 'decimal degree north'})
+
     # write attribute file
     if os.path.isfile(path_to_save+'summa_zLocalAttributes.nc'):
         os.remove(path_to_save+'summa_zLocalAttributes.nc')
-    
+
     attr.to_netcdf(path_to_save+'summa_zLocalAttributes.nc')
+    ########
+    # write mizuroute domain file
+    if(write_mizuroute_domain):
+        # Create a new xarray dataset
+        mizuroute = xr.Dataset()
+
+        # define gru dimension
+        mizuroute ['gru']           = xr.DataArray(geofabric['COMID'].values, dims=('gru'))
+        # prepare for the summa attr file
+        mizuroute ['gruId']          = xr.DataArray(geofabric['COMID'].values, dims=('gru'),
+                                                attrs={'long_name': 'Index of group of response unit (GRU)', 'units': '-'})
+    
+        mizuroute ['length']  = xr.DataArray(geofabric['lengthkm'].values*1000, dims=('gru'),
+                                            attrs={'long_name': 'river segment length of GRU', 'units': 'm'})
+        
+        mizuroute ['GRUarea']        = xr.DataArray(geofabric['unitarea'].values*1e6, dims=('gru'),
+                                            attrs={'long_name': 'Area of each GRU', 'units': 'm^2'})
+
+        mizuroute ['tan_slope']      = xr.DataArray(geofabric['slope'].values, dims=('gru'),
+                                            attrs={'long_name': 'Average slope of GRU', 'units': 'm/m'})
+        
+        mizuroute ['NextDownID']      = xr.DataArray(geofabric['NextDownID'].values, dims=('gru'),
+                                            attrs={'long_name': 'Next downstream gruId', 'units': '-'})
+        # write attribute file
+        if os.path.isfile(path_to_save+'mizuroute_domain.nc'):
+            os.remove(path_to_save+'mizuroute_domain.nc')
+
+        mizuroute.to_netcdf(path_to_save+'mizuroute_domain.nc')
     # return the attribute file
     return(attr)
 #################################

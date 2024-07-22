@@ -15,13 +15,13 @@ stomResist                      BallBerry       ! (06) choice of function for st
 ! ***********************************************************************************************************************
 num_method                      itertive        ! (07) choice of numerical method
 fDerivMeth                      analytic        ! (08) method used to calculate flux derivatives
-LAI_method                      monTable        ! (09) method used to determine LAI and SAI
+LAI_method                      specified       ! (09) method used to determine LAI and SAI
 f_Richards                      mixdform        ! (10) form of Richard's equation
-groundwatr                      bigBuckt        ! (11) choice of groundwater parameterization
+groundwatr                      noXplict        ! (11) choice of groundwater parameterization
 hc_profile                      pow_prof        ! (12) choice of hydraulic conductivity profile
 bcUpprTdyn                      nrg_flux        ! (13) type of upper boundary condition for thermodynamics
 bcLowrTdyn                      zeroFlux        ! (14) type of lower boundary condition for thermodynamics
-bcUpprSoiH                      presHead        ! (15) type of upper boundary condition for soil hydrology
+bcUpprSoiH                      liq_flux        ! (15) type of upper boundary condition for soil hydrology
 bcLowrSoiH                      drainage        ! (16) type of lower boundary condition for soil hydrology
 veg_traits                      Raupach_BLM1994 ! (17) choice of parameterization for vegetation roughness length and displacement height
 canopyEmis                      difTrans        ! (18) choice of parameterization for canopy emissivity
