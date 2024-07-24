@@ -14,6 +14,27 @@ import datetime
 
 
 
+# sort geodata from upstream to downstream
+def sort_geodata(geodata):
+    # find the subbasin order
+    geodata['n_ds_subbasins'] = 0
+    for index, row in geodata.iterrows():
+        n_ds_subbasins = 0
+        nextID = row['maindown']
+        nextID_index = np.where(geodata['subid']==nextID)[0]
+
+        while (len(nextID_index>0) or nextID > 0) :
+            n_ds_subbasins += 1
+            nextID = geodata['maindown'][nextID_index[0]]
+            nextID_index = np.where(geodata['subid']==nextID)[0]
+            
+        geodata.loc[index, 'n_ds_subbasins']= n_ds_subbasins
+
+    # Sort the DataFrame by 'n_ds_subbasins' in descending order
+    geodata = geodata.sort_values(by='n_ds_subbasins', ascending=False, ignore_index=True)
+    geodata = geodata.drop(columns=['n_ds_subbasins'])
+    return geodata
+
 # write HYPE forcing from MESH nc file
 
 def write_hype_forcing(nc_file_source, path_to_save):
@@ -163,7 +184,7 @@ def write_hype_forcing(nc_file_source, path_to_save):
 
 ################################################################
 # write GeoData and GeoClass files
-def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, path_to_save):
+def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, frac_threshold, path_to_save):
     
     if not os.path.isdir(path_to_save):
         os.makedirs(path_to_save)
@@ -181,7 +202,7 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     combinations_set_all = set()
     for index, row in landcover_type.iterrows():
         # get the fraction for land cover for each row
-        fractions = [col for col in landcover_type.columns if col.startswith('frac') and row[col] > 0.00]
+        fractions = [col for col in landcover_type.columns if col.startswith('frac') and row[col] > frac_threshold]
         # remove frac_ from the list
         fractions = [col.split('_')[1] for col in fractions]
         fractions = [int(name) for name in fractions]
@@ -204,6 +225,8 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
 
     combination ['SLC'] = 0
     combination ['SLC'] = np.arange(len(combination))+1
+    # renumber landcover and soil sequentially
+    
     #######################
     landcover_type_prepared = landcover_type.copy()
 
@@ -214,7 +237,7 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     landcover_type_prepared['soil'] = soil_type['majority']
 
     def get_non_zero_columns(row):
-        return [col for col in row.index if col.startswith('frac_') and row[col] != 0]
+        return [col for col in row.index if col.startswith('frac_') and row[col] > frac_threshold]
 
     # Apply the function to each row
     landcover_type_prepared['non_zero_columns'] = landcover_type_prepared.apply(get_non_zero_columns, axis=1)
@@ -275,14 +298,22 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     slc_columns = [col for col in landcover_type_prepared.columns if col.startswith('SLC_')]
 
     # Sort the columns as per your requirements
-    column_order = ['subid', 'maindown', 'area', 'latitude', 'longitude', 'elev_mean', 'slope_mean', 'rivlen'] + slc_columns + ['uparea']
+    column_order = ['subid', 'maindown', 'area', 'latitude', 'longitude', 'elev_mean', 'slope_mean', 'rivlen'] + slc_columns #+ ['uparea']
 
     landcover_type_prepared = landcover_type_prepared[column_order]
     # landcover_type_prepared
     #######################
-    # sort geodata file
-    landcover_type_prepared = landcover_type_prepared.sort_values(by='uparea').reset_index(drop=True)
-    landcover_type_prepared = landcover_type_prepared.drop(columns=['uparea'])
+    # sort geodata file from upstream to downstream
+    landcover_type_prepared = sort_geodata(landcover_type_prepared)
+    
+    # normalize fracs
+    # Identify columns starting with 'SLC_'
+    slc_columns = [col for col in landcover_type_prepared.columns if col.startswith('SLC_')]
+
+    # Normalize SLC values so that they sum to 1 for each row
+    landcover_type_prepared[slc_columns] = landcover_type_prepared[slc_columns].div(landcover_type_prepared[slc_columns].sum(axis=1), axis=0)
+
+    # landcover_type_prepared = landcover_type_prepared.drop(columns=['uparea'])
     landcover_type_prepared.to_csv(path_to_save+'GeoData.txt', sep='\t', index=False)
     # landcover_type_prepared
     #######################
@@ -350,8 +381,7 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
 !	 S  	12	 sand										
 !													
 !													
-! ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	
-!          SLC	LULC	SOIL TYPE	Main crop cropid	Second crop cropid	Crop rotation group	Vegetation type	Special class code	Tile depth	Stream depth	Number of soil layers	Soil layer depth 1	Soil layer depth 2	Soil layer depth 3"""
+! ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	"""
     ]
 
     # Open the file in write mode
@@ -360,8 +390,29 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
         for line in commented_lines:
             file.write(line + '\n')
 
+    # re-number landcover and soil   
+    for i in ['LULC', 'SOIL TYPE']:
+        # Identify unique values and create a mapping from old values to new sequential values
+        unique_values = pd.unique(combination[i])
+        value_mapping = {value: idx + 1 for idx, value in enumerate(unique_values)}
+
+        # Apply the new numbering to the LULC column
+        combination[i] = combination[i].map(value_mapping)
+
+        # Create a DataFrame for the mapping and write to geoclass
+        mapping_df = pd.DataFrame(list(value_mapping.items()), columns=['Old Value', 'New Value'])
+
+        with open(path_to_save+'GeoClass.txt', 'a') as f:
+            f.write('! changes (reclassification) to '+i+'\n')
+            for _, row in mapping_df.iterrows():
+                # Write each row to the file with "!" at the beginning
+                f.write(f"! {row['Old Value']} -> {row['New Value']}\n")
+
+
     # writing the `GeoClass.txt` file
     with open(path_to_save+'GeoClass.txt', 'a') as file:
+            file.write("""! ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	
+!          SLC	LULC	SOIL TYPE	Main crop cropid	Second crop cropid	Crop rotation group	Vegetation type	Special class code	Tile depth	Stream depth	Number of soil layers	Soil layer depth 1	Soil layer depth 2	Soil layer depth 3 \n""")
             combination.to_csv(file, sep='\t', index=False, header=False)
             
 
