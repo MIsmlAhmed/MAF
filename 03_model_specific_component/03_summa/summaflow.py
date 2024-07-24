@@ -3,11 +3,12 @@
 # packages are loaded
 import xarray as xr
 import pint_xarray
+import cdo
+import pint
 import glob
 import netCDF4 as nc4
 import os
 import pandas as pd
-from   easymore import Easymore
 import numpy as np
 import geopandas   as      gpd
 
@@ -34,41 +35,87 @@ def sort_geofabric(geofabric):
     return geofabric
 ############################
 # write summa forcing from MESH forcing
-def write_summa_forcing(path_to_save, nc_file_source):
-    if not os.path.isdir(path_to_save):
-        os.makedirs(path_to_save)
-    
-    # rename the variables:
-    ds = xr.open_dataset(nc_file_source)
+def write_summa_forcing(path_to_save, easymore_output, attr):
+    # Replace with your file path pattern
+    easymore_nc_files = sorted(glob.glob(easymore_output+'/*.nc'))
+    # split the files in batches as cdo cannot mergetime long list of file names
+    batch_size = 15
+    # avoid splitting files if their number is too small
+    if(len(easymore_nc_files) < batch_size):
+        batch_size = len(easymore_nc_files)
+    files_split = np.array_split(easymore_nc_files,batch_size)
+    cdo_obj = cdo.Cdo()  # CDO object
+    intermediate_files = []
 
-    # time step of the data in seconds
-    ds['data_step'] = (ds['time'][1].values - ds['time'][0].values).astype('timedelta64[s]').astype(int)
+    # split files into intermediate files
+    # Combine in batches
+    for i in range(batch_size):
+        batch_files = files_split[i].tolist()
+        batch_output = f'forcing_batch_{i}.nc'
+        cdo_obj.mergetime(input=batch_files, output=batch_output)
+        intermediate_files.append(batch_output)
 
+    # Combine intermediate results into one netcdf file
+    cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
+
+    # Clean up intermediate files if needed
+    for f in intermediate_files:
+        os.remove(f)
+    # open the forcing file
+    forcing = xr.open_dataset('RDRS_forcing.nc')
+    # do the units
+    # RDRS's original variable units
+    RDRS_units= { 
+            'RDRS_v2.1_P_P0_SFC': 'millibar',
+            'RDRS_v2.1_P_HU_09944': 'kg/kg',
+            'RDRS_v2.1_P_TT_09944': 'celsius',
+            'RDRS_v2.1_P_UVC_09944': 'knot',
+            'RDRS_v2.1_A_PR0_SFC': 'm/hr',
+            'RDRS_v2.1_P_FB_SFC': 'W/m^2',
+            'RDRS_v2.1_P_FI_SFC': 'W/m^2',
+            'longitude': 'degree',
+            'latitude': 'degree'}
+
+    # SUMMA's units
+    summa_units= {
+            'RDRS_v2.1_P_UVC_09944': 'm/s',
+            'RDRS_v2.1_P_FI_SFC': 'W/m^2',
+            'RDRS_v2.1_P_FB_SFC': 'W/m^2',
+            'RDRS_v2.1_A_PR0_SFC': 'mm/s',
+            'RDRS_v2.1_P_P0_SFC': 'pascal',
+            'RDRS_v2.1_P_TT_09944': 'kelvin',
+            'RDRS_v2.1_P_HU_09944': 'kg/kg'}
+    # Define the unit registries
+    forcing = forcing.pint.quantify(RDRS_units)  # Add unit attributes of the original RDRS
+    forcing = forcing.pint.to(summa_units)  # convert the units to summa units
+    # remove pint units as they conflict with writing
+    forcing = forcing.pint.dequantify()
     # rename the dictionary
-    rename_dictionary = {'subbasin': 'hruId',
-                         'lat': 'latitude',
-                         'lon': 'longitude',
-                         'RDRS_v2.1_A_PR0_SFC': 'pptrate',
-                         'RDRS_v2.1_P_TT_09944': 'airtemp',
-                         'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
-                         'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
-                         'RDRS_v2.1_P_UVC_09944': 'windspd',
-                         'RDRS_v2.1_P_HU_09944': 'spechum',
-                         'RDRS_v2.1_P_P0_SFC': 'airpres'}
-    ds = ds.rename_vars(rename_dictionary)
-    ds = ds.rename({'subbasin': 'hru'})
-    ds['hru'] = ds['hruId']
+    rename_dictionary = {
+                        'RDRS_v2.1_A_PR0_SFC': 'pptrate',
+                        'RDRS_v2.1_P_TT_09944': 'airtemp',
+                        'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
+                        'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
+                        'RDRS_v2.1_P_UVC_09944': 'windspd',
+                        'RDRS_v2.1_P_HU_09944': 'spechum',
+                        'RDRS_v2.1_P_P0_SFC': 'airpres'}
+    forcing = forcing.rename_vars(rename_dictionary)
+    # time step of the data in seconds
+    forcing['data_step'] = (forcing['time'][1].values - forcing['time'][0].values).astype('timedelta64[s]').astype(int)
+    # convert calendar to 'standard'
+    # forcing = forcing.convert_calendar('standard', align_on='day')
 
-    ds = ds.transpose('time', 'hru') # to make sure the varibales are transposed
+    # create hru forcing
+    forcing = forcing.sel(COMID=attr['hru2gruId'].values)
+    forcing = forcing.rename_dims({'COMID': 'hru'})
+    forcing = forcing.rename_vars({'COMID': 'hru'})
+    # set values based on the actual hruId
+    forcing.coords['hru'] = attr['hruId'].values
+    # save to file
+    forcing.to_netcdf(path_to_save+'summa_forcing.nc')
+    # close the netcdf file
+    forcing.close()
     
-    # save file
-    if os.path.isfile(path_to_save+'summa_forcing.nc'):
-        os.remove(path_to_save+'summa_forcing.nc')
-
-    ds.to_netcdf(path_to_save+'summa_forcing.nc')
-
-    ds.close()
-
     # replace T in the time unit with space
 
     ncid = nc4.Dataset(path_to_save + 'summa_forcing.nc', 'r+')
@@ -82,10 +129,13 @@ def write_summa_forcing(path_to_save, nc_file_source):
     
     # Close the netCDF file
     ncid.close()
-    
+    # remove RDRS forcing
+    os.remove('RDRS_forcing.nc')
     return(xr.open_dataset(path_to_save + 'summa_forcing.nc'))
 ############################
 def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output, frac_threshold, hru_discr, write_mizuroute_domain):
+    if not os.path.isdir(path_to_save):
+        os.makedirs(path_to_save)
     # prepare data by merging the spatial fields into one dataframe
     # read merit geofabric
     # read rivers
