@@ -4,6 +4,7 @@ import pint_xarray
 import glob
 import netCDF4 as nc4
 import os
+import cdo
 import pandas as pd
 from   easymore import Easymore
 import numpy       as      np
@@ -37,7 +38,7 @@ def sort_geodata(geodata):
 
 # write HYPE forcing from MESH nc file
 
-def write_hype_forcing(nc_file_source, path_to_save):
+def write_hype_forcing(easymore_output, path_to_save):
     if not os.path.isdir(path_to_save):
         os.makedirs(path_to_save)
 
@@ -55,9 +56,10 @@ def write_hype_forcing(nc_file_source, path_to_save):
                                  Fill_value = -9999.0): # 'max', 'min', 'mean'
 
         # read the input houtly nc file
-        ds = xr.open_dataset(nc_file_source)
-
-        ds = ds.rename({'subbasin': 'id'})
+        ds = xr.open_dataset(input_file_name)
+        # set id as integer
+        ds.coords[var_id] = ds.coords[var_id].astype(int)
+        # ds = ds.rename({'subbasin': 'id'})
 
         # drop all the other variables except the mentioned varibale, time and id
         variables_to_keep = [variable_in, var_time]
@@ -136,51 +138,84 @@ def write_hype_forcing(nc_file_source, path_to_save):
 
         # return
         return ds_daily
+    ############
+    print('Merging easymore outputs to one NetCDF file \n')
+    # Replace with your file path pattern
+    easymore_nc_files = sorted(glob.glob(easymore_output+'/*.nc'))
+    # split the files in batches as cdo cannot mergetime long list of file names
+    batch_size = 15
+    # avoid splitting files if their number is too small
+    if(len(easymore_nc_files) < batch_size):
+        batch_size = len(easymore_nc_files)
+    files_split = np.array_split(easymore_nc_files,batch_size)
+    cdo_obj = cdo.Cdo()  # CDO object
+    intermediate_files = []
 
-    ds1= convert_hourly_to_daily(nc_file_source,
+    # split files into intermediate files
+    # Combine in batches
+    for i in range(batch_size):
+        print(f'Processing easymore outputs: batch no {i+1} out of {batch_size} \n')
+        batch_files = files_split[i].tolist()
+        batch_output = f'forcing_batch_{i}.nc'
+        cdo_obj.mergetime(input=batch_files, output=batch_output)
+        intermediate_files.append(batch_output)
+
+    # Combine intermediate results into one netcdf file
+    cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
+
+    # Clean up intermediate files if needed
+    for f in intermediate_files:
+        os.remove(f)
+
+    ############
+    
+    ds1= convert_hourly_to_daily('RDRS_forcing.nc',
                                 'RDRS_v2.1_P_TT_09944',
                                 'TMAXobs',
-                                var_unit_conversion = {'in_unit':'K','out_unit':'degreeC'},
+                                var_unit_conversion = {'in_unit':'degreeC','out_unit':'degreeC'},
                                 var_time = 'time',
-                                var_id = 'id',
+                                var_id = 'COMID',
                                 time_diff = -7,
                                 stat = 'max',
                                 # output_file_name_nc = path_to_save+'TMAXobs.nc',
                                 output_file_name_txt = path_to_save+'TMAXobs.txt')
 
-    ds2= convert_hourly_to_daily(nc_file_source,
+    ds2= convert_hourly_to_daily('RDRS_forcing.nc',
                                 'RDRS_v2.1_P_TT_09944',
                                 'TMINobs',
-                                var_unit_conversion = {'in_unit':'K','out_unit':'degreeC'},
+                                var_unit_conversion = {'in_unit':'degreeC','out_unit':'degreeC'},
                                 var_time = 'time',
-                                var_id = 'id',
+                                var_id = 'COMID',
                                 time_diff = -7,
                                 stat = 'min',
                                 # output_file_name_nc = path_to_save+'TMINobs.nc',
                                 output_file_name_txt = path_to_save+'TMINobs.txt')
 
-    ds3= convert_hourly_to_daily(nc_file_source,
+    ds3= convert_hourly_to_daily('RDRS_forcing.nc',
                                 'RDRS_v2.1_P_TT_09944',
                                 'Tobs',
-                                var_unit_conversion = {'in_unit':'K','out_unit':'degreeC'},
+                                var_unit_conversion = {'in_unit':'degreeC','out_unit':'degreeC'},
                                 var_time = 'time',
-                                var_id = 'id',
+                                var_id = 'COMID',
                                 time_diff = -7,
                                 stat = 'mean',
                                 # output_file_name_nc = path_to_save+'Tobs.nc',
                                 output_file_name_txt = path_to_save+'Tobs.txt')
 
-    ds4= convert_hourly_to_daily(nc_file_source,
+    ds4= convert_hourly_to_daily('RDRS_forcing.nc',
                                 'RDRS_v2.1_A_PR0_SFC',
                                 'Pobs',
-                                var_unit_conversion = {'in_unit':'mm s**-1',\
+                                var_unit_conversion = {'in_unit':'m h**-1',\
                                                        'out_unit':'mm day**-1'},
                                 var_time = 'time',
-                                var_id = 'id',
+                                var_id = 'COMID',
                                 time_diff = -7,
                                 stat = 'mean',
                                 # output_file_name_nc = path_to_save+'Pobs.nc',
                                 output_file_name_txt = path_to_save+'Pobs.txt')
+    
+    # remove the merged netcdf file
+    os.remove('RDRS_forcing.nc')
 
 ################################################################
 # write GeoData and GeoClass files
@@ -830,7 +865,7 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # append df1
     with open(output_file, 'a') as file:
         # Write the DataFrame to the file
-        df1.to_csv(file, sep='\t', index=True, header=False, line_terminator='\n')
+        df1.to_csv(file, sep='\t', index=True, header=False)#, line_terminator='\n')
 
     # write out first text section
     s2= [
@@ -856,7 +891,7 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # append df2
     with open(output_file, 'a') as file:
         # Write the DataFrame to the file
-        df2.to_csv(file, sep='\t', index=True, header=False, line_terminator='\n')
+        df2.to_csv(file, sep='\t', index=True, header=False)#, line_terminator='\n')
 
     # write out s3
     s3= [
@@ -877,7 +912,7 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     # append df3
     with open(output_file, 'a') as file:
         # Write the DataFrame to the file
-        df3.to_csv(file, sep='\t', index=True, header=False, line_terminator='\n')
+        df3.to_csv(file, sep='\t', index=True, header=False)#, line_terminator='\n')
 
     # write out s4
     s4= [
@@ -985,7 +1020,7 @@ steplength	1d
     # append df5
     with open(output_file, 'a') as file:
         # Write the DataFrame to the file
-        df5.to_csv(file, sep='\t', index=True, header=False, line_terminator='\n')
+        df5.to_csv(file, sep='\t', index=True, header=False)#, line_terminator='\n')
 
     # write out s6
     s6= [
@@ -1107,4 +1142,4 @@ steplength	1d
     # append df9
     with open(output_file, 'a') as file:
         # Write the DataFrame to the file
-        df9.to_csv(file, sep='\t', index=True, header=False, line_terminator='\n')
+        df9.to_csv(file, sep='\t', index=True, header=False)#, line_terminator='\n')
