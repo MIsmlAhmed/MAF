@@ -845,7 +845,7 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
     s1= [
     """!! ----------------------------------------------------------------------------							
 !!							
-!! HYPE - Milk River & St. Mary's River HYPE
+!! HYPE - Model Agnostic Framework
 !!							
 !! -----------------------------------------------------------------------------							
 !! Check Indata during first runs (deactivate after first runs) """
@@ -906,7 +906,7 @@ def write_hype_info_filedir_files(path_to_save, spinup_days):
 
     # create df3
     df3_row=['readdaily','submodel','calibration','readobsid','soilstretch']
-    df3_val=['n','n','n','n','n']
+    df3_val=['y','n','n','n','n']
     df3=pd.DataFrame(df3_val, index=df3_row, columns=None)
 
     # append df3
@@ -933,7 +933,7 @@ steplength	1d
 
     # create df4
     df4_row=['readsfobs','readswobs','readuobs','readrhobs','readtminobs','readtmaxobs','soiliniwet','usestop84']
-    df4_val=['n','n','n','n','n','n','n','n']
+    df4_val=['n','n','n','n','y','y','n','n']
     df4=pd.DataFrame(df4_val, index=df4_row, columns=None)
 
     # create the corresponding comments
