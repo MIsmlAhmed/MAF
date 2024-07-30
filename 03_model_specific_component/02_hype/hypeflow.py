@@ -167,6 +167,13 @@ def write_hype_forcing(easymore_output, path_to_save):
     for f in intermediate_files:
         os.remove(f)
 
+    # open the forcing file
+    forcing = xr.open_dataset('RDRS_forcing.nc')
+    # convert calendar to 'standard'
+    forcing = forcing.convert_calendar('standard')
+    # write to netcdf
+    forcing.to_netcdf('RDRS_forcing.nc')
+    forcing.close()
     ############
     
     ds1= convert_hourly_to_daily('RDRS_forcing.nc',

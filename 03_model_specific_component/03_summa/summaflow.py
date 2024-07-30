@@ -100,10 +100,11 @@ def write_summa_forcing(path_to_save, easymore_output, attr):
                         'RDRS_v2.1_P_HU_09944': 'spechum',
                         'RDRS_v2.1_P_P0_SFC': 'airpres'}
     forcing = forcing.rename_vars(rename_dictionary)
+    # convert calendar to 'standard'
+    forcing = forcing.convert_calendar('standard')
     # time step of the data in seconds
     forcing['data_step'] = (forcing['time'][1].values - forcing['time'][0].values).astype('timedelta64[s]').astype(int)
-    # convert calendar to 'standard'
-    # forcing = forcing.convert_calendar('standard', align_on='day')
+    
 
     # create hru forcing
     forcing = forcing.sel(COMID=attr['hru2gruId'].values)
