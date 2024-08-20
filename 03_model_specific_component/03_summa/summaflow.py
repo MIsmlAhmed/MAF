@@ -11,7 +11,7 @@ import os
 import pandas as pd
 import numpy as np
 import geopandas   as      gpd
-
+from alive_progress import alive_bar #progress bar
 
 ############################
 # sort geofabric from upstream to downstream
@@ -35,11 +35,12 @@ def sort_geofabric(geofabric):
     return geofabric
 ############################
 # write summa forcing from MESH forcing
-def write_summa_forcing(path_to_save, easymore_output, attr):
+def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output, attr):
+    print('Merging easymore outputs to one NetCDF file \n')
     # Replace with your file path pattern
     easymore_nc_files = sorted(glob.glob(easymore_output+'/*.nc'))
     # split the files in batches as cdo cannot mergetime long list of file names
-    batch_size = 15
+    batch_size = 20
     # avoid splitting files if their number is too small
     if(len(easymore_nc_files) < batch_size):
         batch_size = len(easymore_nc_files)
@@ -49,11 +50,13 @@ def write_summa_forcing(path_to_save, easymore_output, attr):
 
     # split files into intermediate files
     # Combine in batches
-    for i in range(batch_size):
-        batch_files = files_split[i].tolist()
-        batch_output = f'forcing_batch_{i}.nc'
-        cdo_obj.mergetime(input=batch_files, output=batch_output)
-        intermediate_files.append(batch_output)
+    with alive_bar(batch_size, force_tty=True) as bar:
+        for i in range(batch_size):
+            batch_files = files_split[i].tolist()
+            batch_output = f'forcing_batch_{i}.nc'
+            cdo_obj.mergetime(input=batch_files, output=batch_output)
+            intermediate_files.append(batch_output)
+            bar()
 
     # Combine intermediate results into one netcdf file
     cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
@@ -63,45 +66,54 @@ def write_summa_forcing(path_to_save, easymore_output, attr):
         os.remove(f)
     # open the forcing file
     forcing = xr.open_dataset('RDRS_forcing.nc')
+    # convert calendar to 'standard'
+    forcing = forcing.convert_calendar('standard')
+    # The data are in UTC time and they need to be shifted -6h to local time
+    forcing['time'] = forcing['time'] + pd.Timedelta(hours=timeshift)
+
     # do the units
     # RDRS's original variable units
-    RDRS_units= { 
-            'RDRS_v2.1_P_P0_SFC': 'millibar',
-            'RDRS_v2.1_P_HU_09944': 'kg/kg',
-            'RDRS_v2.1_P_TT_09944': 'celsius',
-            'RDRS_v2.1_P_UVC_09944': 'knot',
-            'RDRS_v2.1_A_PR0_SFC': 'm/hr',
-            'RDRS_v2.1_P_FB_SFC': 'W/m^2',
-            'RDRS_v2.1_P_FI_SFC': 'W/m^2',
-            'longitude': 'degree',
-            'latitude': 'degree'}
+
+    # Create the new dictionary
+    RDRS_units = {v['in_varname']: v['in_units'] for v in forcing_units.values()}
+    # RDRS_units= { 
+    #         'RDRS_v2.1_P_P0_SFC': 'millibar',
+    #         'RDRS_v2.1_P_HU_09944': 'kg/kg',
+    #         'RDRS_v2.1_P_TT_09944': 'celsius',
+    #         'RDRS_v2.1_P_UVC_09944': 'knot',
+    #         'RDRS_v2.1_A_PR0_SFC': 'm/hr',
+    #         'RDRS_v2.1_P_FB_SFC': 'W/m^2',
+    #         'RDRS_v2.1_P_FI_SFC': 'W/m^2',
+    #         'longitude': 'degree',
+    #         'latitude': 'degree'}
 
     # SUMMA's units
-    summa_units= {
-            'RDRS_v2.1_P_UVC_09944': 'm/s',
-            'RDRS_v2.1_P_FI_SFC': 'W/m^2',
-            'RDRS_v2.1_P_FB_SFC': 'W/m^2',
-            'RDRS_v2.1_A_PR0_SFC': 'mm/s',
-            'RDRS_v2.1_P_P0_SFC': 'pascal',
-            'RDRS_v2.1_P_TT_09944': 'kelvin',
-            'RDRS_v2.1_P_HU_09944': 'kg/kg'}
+    summa_units = {v['in_varname']: v['out_units'] for v in forcing_units.values()}
+    # summa_units= {
+    #         'RDRS_v2.1_P_UVC_09944': 'm/s',
+    #         'RDRS_v2.1_P_FI_SFC': 'W/m^2',
+    #         'RDRS_v2.1_P_FB_SFC': 'W/m^2',
+    #         'RDRS_v2.1_A_PR0_SFC': 'mm/s',
+    #         'RDRS_v2.1_P_P0_SFC': 'pascal',
+    #         'RDRS_v2.1_P_TT_09944': 'kelvin',
+    #         'RDRS_v2.1_P_HU_09944': 'kg/kg'}
     # Define the unit registries
     forcing = forcing.pint.quantify(RDRS_units)  # Add unit attributes of the original RDRS
     forcing = forcing.pint.to(summa_units)  # convert the units to summa units
     # remove pint units as they conflict with writing
     forcing = forcing.pint.dequantify()
     # rename the dictionary
-    rename_dictionary = {
-                        'RDRS_v2.1_A_PR0_SFC': 'pptrate',
-                        'RDRS_v2.1_P_TT_09944': 'airtemp',
-                        'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
-                        'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
-                        'RDRS_v2.1_P_UVC_09944': 'windspd',
-                        'RDRS_v2.1_P_HU_09944': 'spechum',
-                        'RDRS_v2.1_P_P0_SFC': 'airpres'}
+    # Create the new dictionary
+    rename_dictionary = {v['in_varname']: k for k, v in forcing_units.items()}
+    # rename_dictionary = {
+    #                     'RDRS_v2.1_A_PR0_SFC': 'pptrate',
+    #                     'RDRS_v2.1_P_TT_09944': 'airtemp',
+    #                     'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
+    #                     'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
+    #                     'RDRS_v2.1_P_UVC_09944': 'windspd',
+    #                     'RDRS_v2.1_P_HU_09944': 'spechum',
+    #                     'RDRS_v2.1_P_P0_SFC': 'airpres'}
     forcing = forcing.rename_vars(rename_dictionary)
-    # convert calendar to 'standard'
-    forcing = forcing.convert_calendar('standard')
     # time step of the data in seconds
     forcing['data_step'] = (forcing['time'][1].values - forcing['time'][0].values).astype('timedelta64[s]').astype(int)
     
@@ -112,6 +124,9 @@ def write_summa_forcing(path_to_save, easymore_output, attr):
     forcing = forcing.rename_vars({'COMID': 'hru'})
     # set values based on the actual hruId
     forcing.coords['hru'] = attr['hruId'].values
+    # Select the first time step (index 0) for lon and lat variables
+    forcing['longitude'] = forcing['longitude'].isel(time=0).drop_vars('time')
+    forcing['latitude'] = forcing['latitude'].isel(time=0).drop_vars('time')
     # save to file
     forcing.to_netcdf(path_to_save+'summa_forcing.nc')
     # close the netcdf file
@@ -329,6 +344,12 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     ########
     # write mizuroute domain file
     if(write_mizuroute_domain):
+
+        if not os.path.isdir(path_to_save+'mizuroute/'):
+            os.makedirs(path_to_save+'mizuroute/')
+        
+        if not os.path.isdir(path_to_save+'mizuroute/mizuroute_results/'):
+            os.makedirs(path_to_save+'mizuroute/mizuroute_results/')
         # Create a new xarray dataset
         mizuroute = xr.Dataset()
 
@@ -350,10 +371,14 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
         mizuroute ['NextDownID']      = xr.DataArray(geofabric['NextDownID'].values, dims=('gru'),
                                             attrs={'long_name': 'Next downstream gruId', 'units': '-'})
         # write attribute file
-        if os.path.isfile(path_to_save+'mizuroute_domain.nc'):
-            os.remove(path_to_save+'mizuroute_domain.nc')
+        if os.path.isfile(path_to_save+'mizuroute/'+'mizuroute_domain.nc'):
+            os.remove(path_to_save+'mizuroute/'+'mizuroute_domain.nc')
 
-        mizuroute.to_netcdf(path_to_save+'mizuroute_domain.nc')
+        mizuroute.to_netcdf(path_to_save+'mizuroute/'+'mizuroute_domain.nc')
+
+        # copy setting files
+        os.system("cp -r setting_files/mizuroute/* "+ path_to_save+'/mizuroute/')
+
     # return the attribute file
     return(attr)
 #################################
@@ -428,9 +453,13 @@ def write_summa_initial_conditions(attr, soil_mLayerDepth, path_to_save):
 ##################################
 def write_summa_filemanager(path_to_save, forcing):
 
-
-    start_date = pd.to_datetime(forcing['time'][0].values).strftime('%Y-%m-%d %H:%M')
-    end_date = pd.to_datetime(forcing['time'][-1].values).strftime('%Y-%m-%d %H:%M')
+    # Convert to pandas datetime if not already in that format
+    time_values = pd.to_datetime(forcing['time'].values)
+    # Filter to get only the midnight times
+    midnight_times = time_values[time_values.time == pd.Timestamp('00:00:00').time()]
+    # Find the first and last midnight values
+    start_date = midnight_times.min().strftime('%Y-%m-%d %H:%M')
+    end_date = midnight_times.max().strftime('%Y-%m-%d %H:%M')
 
     template_string="""controlVersion       'SUMMA_FILE_MANAGER_V3.0.0' !  fman_ver 
 simStartTime         '{start_date}' ! 
@@ -438,7 +467,7 @@ simEndTime           '{end_date}' !
 tmZoneInfo           'localTime' ! 
 settingsPath         './' !  setting_path
 forcingPath          './' !  input_path
-outputPath           './results/' !  output_path
+outputPath           './summa_results/' !  output_path
 decisionsFile        './summa_zDecisions.txt' !  decision
 outputControlFile    './Model_Output.txt' !  OUTPUT_CONTROL
 globalHruParamFile   './summa_zLocalParamInfo.txt' !  local_par
@@ -466,7 +495,7 @@ noahmpTableFile      'MPTABLE.TBL' !
 
 ###############################
 def copy_summa_static_files(path_to_save):
-    os.system("cp -r setting_files/* "+ path_to_save)
+    os.system("cp -r setting_files/summa/* "+ path_to_save)
     # create results firectory
-    if not os.path.isdir(path_to_save+'results/'):
-        os.makedirs(path_to_save+'results/')
+    if not os.path.isdir(path_to_save+'summa_results/'):
+        os.makedirs(path_to_save+'summa_results/')
