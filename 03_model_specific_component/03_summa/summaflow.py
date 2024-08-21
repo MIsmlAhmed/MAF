@@ -220,7 +220,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     matched_lanuse = pd.DataFrame(matched_landuse, columns=['NALCMS_ID', 'NALCMS_Description', 'USGS_ID', 'USGS_Description'])
 
     # Create a dictionary for mapping NALCMS IDs to USGS IDs
-    nalcms_to_usgs = dict(zip(matched_lanuse['NALCMS_ID'], matched_lanuse['USGS_ID']))
+    landcover2summa = dict(zip(matched_lanuse['NALCMS_ID'], matched_lanuse['USGS_ID']))
 
     # link NALCMS to USGS ids in the VEGPARM.TBL
     # Manually matched soilgrid to ROSETTA types
@@ -242,7 +242,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     # Create DataFrame
     matched_soils = pd.DataFrame(matched_soils, columns=['Soilgrid_ID', 'Soilgrid_Description', 'ROSETTA_ID', 'ROSETTA_Description'])
     # Create a dictionary for mapping Soilgrid IDs to ROSETTA IDs
-    soilgrid_to_rosetta = dict(zip(matched_soils['Soilgrid_ID'], matched_soils['ROSETTA_ID']))
+    soil2summa = dict(zip(matched_soils['Soilgrid_ID'], matched_soils['ROSETTA_ID']))
     ######---------------------------
     
     # get the fraction for land cover for each row
@@ -277,8 +277,8 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
                                         'hruId': np.arange(nhru)+k,
                                         'downHRUindex': np.zeros(nhru),
                                         'HRUarea': normalized_frac_vals * geofabric['unitarea'][index]*1e6,
-                                        'vegTypeIndex': list(map(nalcms_to_usgs.get, frac_number)),
-                                        'soilTypeIndex': np.repeat(list(map(soilgrid_to_rosetta.get, [soil_landuse_stats['soil_majority'][index]])), nhru),
+                                        'vegTypeIndex': list(map(landcover2summa.get, frac_number)),
+                                        'soilTypeIndex': np.repeat(list(map(soil2summa.get, [soil_landuse_stats['soil_majority'][index]])), nhru),
                                         'slopeTypeIndex': np.ones(nhru),
                                         'elevation': np.repeat(geofabric['mean_elev'][index], nhru),
                                         'contourLength': normalized_frac_vals * geofabric['lengthkm'][index]*1000,
@@ -355,7 +355,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
 
         # define gru dimension
         mizuroute ['gru']           = xr.DataArray(geofabric['COMID'].values, dims=('gru'))
-        # prepare for the summa attr file
+        # prepare other topo information
         mizuroute ['gruId']          = xr.DataArray(geofabric['COMID'].values, dims=('gru'),
                                                 attrs={'long_name': 'Index of group of response unit (GRU)', 'units': '-'})
     

@@ -1,6 +1,7 @@
 # Load needed packages
 import xarray as xr
 import pint_xarray
+import pint
 import glob
 import netCDF4 as nc4
 import os
@@ -38,7 +39,7 @@ def sort_geodata(geodata):
 
 # write HYPE forcing from MESH nc file
 
-def write_hype_forcing(easymore_output, timeshift, forcing_units, path_to_save):
+def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapping, path_to_save):
     if not os.path.isdir(path_to_save):
         os.makedirs(path_to_save)
 
@@ -180,12 +181,13 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, path_to_save):
     forcing.close()
     ############
     print('Get average daily values for HYPE \n')
+    basinID = geofabric_mapping['basinID']['in_varname']
     ds1= convert_hourly_to_daily('RDRS_forcing.nc',
                                 forcing_units['temperature']['in_varname'],
                                 'TMAXobs',
                                 var_unit_conversion = {'in_unit':forcing_units['temperature']['in_units'],'out_unit':forcing_units['temperature']['out_units']},
                                 var_time = 'time',
-                                var_id = 'COMID',
+                                var_id = basinID,
                                 time_diff = -7,
                                 stat = 'max',
                                 # output_file_name_nc = path_to_save+'TMAXobs.nc',
@@ -196,7 +198,7 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, path_to_save):
                                 'TMINobs',
                                 var_unit_conversion = {'in_unit':forcing_units['temperature']['in_units'],'out_unit':forcing_units['temperature']['out_units']},
                                 var_time = 'time',
-                                var_id = 'COMID',
+                                var_id = basinID,
                                 time_diff = -7,
                                 stat = 'min',
                                 # output_file_name_nc = path_to_save+'TMINobs.nc',
@@ -207,7 +209,7 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, path_to_save):
                                 'Tobs',
                                 var_unit_conversion = {'in_unit':forcing_units['temperature']['in_units'],'out_unit':forcing_units['temperature']['out_units']},
                                 var_time = 'time',
-                                var_id = 'COMID',
+                                var_id = basinID,
                                 time_diff = -7,
                                 stat = 'mean',
                                 # output_file_name_nc = path_to_save+'Tobs.nc',
@@ -218,7 +220,7 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, path_to_save):
                                 'Pobs',
                                 var_unit_conversion = {'in_unit':forcing_units['precipitation']['in_units'],'out_unit':forcing_units['precipitation']['out_units']},
                                 var_time = 'time',
-                                var_id = 'COMID',
+                                var_id = basinID,
                                 time_diff = -7,
                                 stat = 'mean',
                                 # output_file_name_nc = path_to_save+'Pobs.nc',
@@ -229,19 +231,23 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, path_to_save):
 
 ################################################################
 # write GeoData and GeoClass files
-def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, frac_threshold, path_to_save):
+def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, frac_threshold, geofabric_mapping, path_to_save):
     
     if not os.path.isdir(path_to_save):
         os.makedirs(path_to_save)
-        
+    
+    # extract geofabric mapping values
+    basinID = geofabric_mapping['basinID']['in_varname']
+    NextDownID = geofabric_mapping['nextDownID']['in_varname']
+
     # load the information from the gistool for soil and land cover and find the number of geoclass
     soil_type = pd.read_csv(gistool_output+'modified_domain_stats_soil_classes.csv')
     landcover_type = pd.read_csv(gistool_output+'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv')
     elevation_mean = pd.read_csv(gistool_output+'modified_domain_stats_elv.csv')
 
-    soil_type = soil_type.sort_values(by='COMID').reset_index(drop=True)
-    landcover_type = landcover_type.sort_values(by='COMID').reset_index(drop=True)
-    elevation_mean = elevation_mean.sort_values(by='COMID').reset_index(drop=True)
+    soil_type = soil_type.sort_values(by=basinID).reset_index(drop=True)
+    landcover_type = landcover_type.sort_values(by=basinID).reset_index(drop=True)
+    elevation_mean = elevation_mean.sort_values(by=basinID).reset_index(drop=True)
 
     # find the combination of the majority soil and land cover
     combinations_set_all = set()
@@ -303,30 +309,52 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
             landcover_type_prepared.loc[index, column_name] = landcover_type_prepared[i].iloc[index]
 #######################
     riv = gpd.read_file(rivers_shapefile)
-    riv.sort_values(by='COMID').reset_index(drop=True)
+    riv.sort_values(by=basinID).reset_index(drop=True)
     riv['lengthm'] = 0.00
-    riv['lengthm'] = riv['lengthkm'] * 1000
+    # riv['lengthm'] = riv[geofabric_mapping['rivlen']['in_varname']] * 1000
+    rivlen_name = geofabric_mapping['rivlen']['in_varname']
+    length_in_units = geofabric_mapping['rivlen']['in_units']
+    length_out_units = geofabric_mapping['rivlen']['out_units']
+
+    # Initialize a unit registry
+    ureg = pint.UnitRegistry()
+    # Quantify the DataFrame column with the original units
+    lengthm = riv[rivlen_name].values * ureg(length_in_units)
+    # Convert to the desired units
+    riv['lengthm'] = lengthm.to(length_out_units).magnitude
 
     cat = gpd.read_file(subbasins_shapefile)
-    cat.sort_values(by='COMID').reset_index(drop=True)
+    cat.sort_values(by=basinID).reset_index(drop=True)
     cat['area'] = 0.00
-    cat['area'] = cat['unitarea'] * 1000000 # km2 to m2
+    # cat['area'] = cat['unitarea'] * 1000000 # km2 to m2
+    area_name = geofabric_mapping['area']['in_varname']
+    area_in_units = geofabric_mapping['area']['in_units']
+    area_out_units = geofabric_mapping['area']['out_units']
+
+    # Initialize a unit registry
+    ureg = pint.UnitRegistry()
+    # Quantify the DataFrame column with the original units
+    area_m2 = cat[area_name].values * ureg(area_in_units)
+    # Convert to the desired units
+    cat['area'] = area_m2.to(area_out_units).magnitude
+
     cat['latitude'] = cat.centroid.y
     cat['longitude'] = cat.centroid.x
     
     # add information to the geodata dataframe
-    landcover_type_prepared['NextDownID'] = riv['NextDownID']
+    
+    landcover_type_prepared[NextDownID] = riv[NextDownID]
     landcover_type_prepared['area'] = cat['area']
     landcover_type_prepared['latitude'] = cat['latitude']
     landcover_type_prepared['longitude'] = cat['longitude']
-    landcover_type_prepared['elev_mean'] = elevation_mean['mean']
-    landcover_type_prepared['slope_mean'] = riv['slope']
-    landcover_type_prepared['rivlen'] = riv['lengthm']
-    landcover_type_prepared['uparea'] = riv['uparea']
+    landcover_type_prepared[geofabric_mapping['elev']['out_varname']] = elevation_mean[geofabric_mapping['elev']['in_varname']]
+    landcover_type_prepared[geofabric_mapping['slope']['out_varname']] = riv[geofabric_mapping['slope']['in_varname']]
+    landcover_type_prepared[geofabric_mapping['rivlen']['out_varname']] = riv['lengthm']
+    # landcover_type_prepared['uparea'] = riv['uparea']
     
     column_name_mapping = {
-    'COMID': 'subid',
-    'NextDownID': 'maindown',
+    basinID: 'subid',
+    NextDownID: 'maindown',
     'area': 'area',
     'latitude': 'latitude',
     'longitude': 'longitude',
