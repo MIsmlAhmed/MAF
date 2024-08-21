@@ -38,10 +38,9 @@
 <vname_time>               time                                         ! name of time variable in the runoff file
 <dname_time>               time                                         ! name of time dimension
 <units_qsim>               m/s                                          ! units of runoff
-<dt_qsim>                  86400                                        ! time interval of the runoff
+<dt_qsim>                  3600                                         ! time interval of the runoff
 <is_remap>                 F                                            ! no remapping is needed
 <calendar>                 standard                                     ! calendar is defined for summa output
-!!<newFileFrequency>         daily	                                    ! frequency for new output files (single, daily, monthly or yearly)
 <doesBasinRoute>	       1	                                        ! hillslope routing options. 0-> no (already routed), 1->IRF
 ! ****************************************************************************************************************************
 ! Spatially constant parameter Namelist name
