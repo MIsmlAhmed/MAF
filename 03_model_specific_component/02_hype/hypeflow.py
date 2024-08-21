@@ -347,9 +347,9 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     landcover_type_prepared['area'] = cat['area']
     landcover_type_prepared['latitude'] = cat['latitude']
     landcover_type_prepared['longitude'] = cat['longitude']
-    landcover_type_prepared[geofabric_mapping['elev']['out_varname']] = elevation_mean[geofabric_mapping['elev']['in_varname']]
-    landcover_type_prepared[geofabric_mapping['slope']['out_varname']] = riv[geofabric_mapping['slope']['in_varname']]
-    landcover_type_prepared[geofabric_mapping['rivlen']['out_varname']] = riv['lengthm']
+    landcover_type_prepared['elev_mean'] = elevation_mean['mean']
+    landcover_type_prepared['slope_mean'] = riv['slope']
+    landcover_type_prepared['rivlen'] = riv['lengthm']
     # landcover_type_prepared['uparea'] = riv['uparea']
     
     column_name_mapping = {

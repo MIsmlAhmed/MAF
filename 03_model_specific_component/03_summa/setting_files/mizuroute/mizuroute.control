@@ -51,7 +51,7 @@
 ! Dictionary to map variable names
 ! ---------------------------
 <varname_area>             GRUarea                                      ! name of variable holding hru area
-<varname_length>           length                                       ! name of variable holding segment length
+<varname_length>           rivlength                                    ! name of variable holding segment length
 <varname_slope>            tan_slope                                    ! name of variable holding segment slope
 <varname_HRUid>            gruId                                        ! name of variable holding HRU id
 <varname_hruSegId>         gruId                                        ! name of variable holding the stream segment below each HRU

@@ -15,143 +15,40 @@ from alive_progress import alive_bar #progress bar
 
 ############################
 # sort geofabric from upstream to downstream
-def sort_geofabric(geofabric):
+def sort_geofabric(geofabric, basinID, nextDownID):
     # find the subbasin order
     geofabric['n_ds_subbasins'] = 0
     for index, row in geofabric.iterrows():
         n_ds_subbasins = 0
-        nextID = row['NextDownID']
-        nextID_index = np.where(geofabric['COMID']==nextID)[0]
+        nextID = row[nextDownID]
+        nextID_index = np.where(geofabric[basinID]==nextID)[0]
 
         while (len(nextID_index>0) or nextID > 0) :
             n_ds_subbasins += 1
-            nextID = geofabric['NextDownID'][nextID_index[0]]
-            nextID_index = np.where(geofabric['COMID']==nextID)[0]
+            nextID = geofabric[nextDownID][nextID_index[0]]
+            nextID_index = np.where(geofabric[basinID]==nextID)[0]
             
         geofabric.loc[index, 'n_ds_subbasins']= n_ds_subbasins
 
     # Sort the DataFrame by 'n_ds_subbasins' in descending order
     geofabric = geofabric.sort_values(by='n_ds_subbasins', ascending=False, ignore_index=True)
     return geofabric
+
 ############################
-# write summa forcing from MESH forcing
-def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output, attr):
-    print('Merging easymore outputs to one NetCDF file \n')
-    # Replace with your file path pattern
-    easymore_nc_files = sorted(glob.glob(easymore_output+'/*.nc'))
-    # split the files in batches as cdo cannot mergetime long list of file names
-    batch_size = 20
-    # avoid splitting files if their number is too small
-    if(len(easymore_nc_files) < batch_size):
-        batch_size = len(easymore_nc_files)
-    files_split = np.array_split(easymore_nc_files,batch_size)
-    cdo_obj = cdo.Cdo()  # CDO object
-    intermediate_files = []
-
-    # split files into intermediate files
-    # Combine in batches
-    with alive_bar(batch_size, force_tty=True) as bar:
-        for i in range(batch_size):
-            batch_files = files_split[i].tolist()
-            batch_output = f'forcing_batch_{i}.nc'
-            cdo_obj.mergetime(input=batch_files, output=batch_output)
-            intermediate_files.append(batch_output)
-            bar()
-
-    # Combine intermediate results into one netcdf file
-    cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
-
-    # Clean up intermediate files if needed
-    for f in intermediate_files:
-        os.remove(f)
-    # open the forcing file
-    forcing = xr.open_dataset('RDRS_forcing.nc')
-    # convert calendar to 'standard'
-    forcing = forcing.convert_calendar('standard')
-    # The data are in UTC time and they need to be shifted -6h to local time
-    forcing['time'] = forcing['time'] + pd.Timedelta(hours=timeshift)
-
-    # do the units
-    # RDRS's original variable units
-
-    # Create the new dictionary
-    RDRS_units = {v['in_varname']: v['in_units'] for v in forcing_units.values()}
-    # RDRS_units= { 
-    #         'RDRS_v2.1_P_P0_SFC': 'millibar',
-    #         'RDRS_v2.1_P_HU_09944': 'kg/kg',
-    #         'RDRS_v2.1_P_TT_09944': 'celsius',
-    #         'RDRS_v2.1_P_UVC_09944': 'knot',
-    #         'RDRS_v2.1_A_PR0_SFC': 'm/hr',
-    #         'RDRS_v2.1_P_FB_SFC': 'W/m^2',
-    #         'RDRS_v2.1_P_FI_SFC': 'W/m^2',
-    #         'longitude': 'degree',
-    #         'latitude': 'degree'}
-
-    # SUMMA's units
-    summa_units = {v['in_varname']: v['out_units'] for v in forcing_units.values()}
-    # summa_units= {
-    #         'RDRS_v2.1_P_UVC_09944': 'm/s',
-    #         'RDRS_v2.1_P_FI_SFC': 'W/m^2',
-    #         'RDRS_v2.1_P_FB_SFC': 'W/m^2',
-    #         'RDRS_v2.1_A_PR0_SFC': 'mm/s',
-    #         'RDRS_v2.1_P_P0_SFC': 'pascal',
-    #         'RDRS_v2.1_P_TT_09944': 'kelvin',
-    #         'RDRS_v2.1_P_HU_09944': 'kg/kg'}
-    # Define the unit registries
-    forcing = forcing.pint.quantify(RDRS_units)  # Add unit attributes of the original RDRS
-    forcing = forcing.pint.to(summa_units)  # convert the units to summa units
-    # remove pint units as they conflict with writing
-    forcing = forcing.pint.dequantify()
-    # rename the dictionary
-    # Create the new dictionary
-    rename_dictionary = {v['in_varname']: k for k, v in forcing_units.items()}
-    # rename_dictionary = {
-    #                     'RDRS_v2.1_A_PR0_SFC': 'pptrate',
-    #                     'RDRS_v2.1_P_TT_09944': 'airtemp',
-    #                     'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
-    #                     'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
-    #                     'RDRS_v2.1_P_UVC_09944': 'windspd',
-    #                     'RDRS_v2.1_P_HU_09944': 'spechum',
-    #                     'RDRS_v2.1_P_P0_SFC': 'airpres'}
-    forcing = forcing.rename_vars(rename_dictionary)
-    # time step of the data in seconds
-    forcing['data_step'] = (forcing['time'][1].values - forcing['time'][0].values).astype('timedelta64[s]').astype(int)
-    
-
-    # create hru forcing
-    forcing = forcing.sel(COMID=attr['hru2gruId'].values)
-    forcing = forcing.rename_dims({'COMID': 'hru'})
-    forcing = forcing.rename_vars({'COMID': 'hru'})
-    # set values based on the actual hruId
-    forcing.coords['hru'] = attr['hruId'].values
-    # Select the first time step (index 0) for lon and lat variables
-    forcing['longitude'] = forcing['longitude'].isel(time=0).drop_vars('time')
-    forcing['latitude'] = forcing['latitude'].isel(time=0).drop_vars('time')
-    # save to file
-    forcing.to_netcdf(path_to_save+'summa_forcing.nc')
-    # close the netcdf file
-    forcing.close()
-    
-    # replace T in the time unit with space
-
-    ncid = nc4.Dataset(path_to_save + 'summa_forcing.nc', 'r+')
-    
-    # Access the 'units' attribute and replace 'T' with a space
-    units_attribute = ncid['time'].units
-    units_attribute = units_attribute.replace('T', ' ')
-    
-    # Update the 'units' attribute in the netCDF file
-    ncid['time'].setncattr('units', units_attribute)
-    
-    # Close the netCDF file
-    ncid.close()
-    # remove RDRS forcing
-    os.remove('RDRS_forcing.nc')
-    return(xr.open_dataset(path_to_save + 'summa_forcing.nc'))
-############################
-def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output, frac_threshold, hru_discr, write_mizuroute_domain):
+def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output, frac_threshold, hru_discr, 
+                          geofabric_mapping, landcover_mapping, soil_mapping, write_mizuroute_domain):
     if not os.path.isdir(path_to_save):
         os.makedirs(path_to_save)
+    # get geofabric fields
+    basinID = geofabric_mapping['basinID']['in_varname']
+    nextDownID = geofabric_mapping['nextDownID']['in_varname']
+    area_name = geofabric_mapping['area']['in_varname']
+    area_in_units = geofabric_mapping['area']['in_units']
+    area_out_units = geofabric_mapping['area']['out_units']
+    rivlen_name = geofabric_mapping['rivlen']['in_varname']
+    length_in_units = geofabric_mapping['rivlen']['in_units']
+    length_out_units = geofabric_mapping['rivlen']['out_units']
+
     # prepare data by merging the spatial fields into one dataframe
     # read merit geofabric
     # read rivers
@@ -164,86 +61,45 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     elev_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_elv.csv'))
 
     #rename columns except COMID
-    elev_stats = elev_stats.rename(columns=lambda x: x + '_elev' if x != 'COMID' else x)
+    elev_stats = elev_stats.rename(columns=lambda x: x + '_elev' if x != basinID else x)
 
     # merge riv, cat, and elev_stat in one dataframe on COMID
-    geofabric = riv.merge(cat, on='COMID')
-    geofabric = geofabric.merge(elev_stats, on='COMID')
+    geofabric = riv.merge(cat, on=basinID)
+    geofabric = geofabric.merge(elev_stats, on=basinID)
     geofabric = geofabric.drop(columns=['geometry_x', 'hillslope_x', 'hillslope_y', 'geometry_y'])
 
     # sort geofabric from upstream to downstream
-    geofabric = sort_geofabric(geofabric)
+    geofabric = sort_geofabric(geofabric, basinID, nextDownID)
+
+    # make necessary unit conversion
+    # Initialize a unit registry
+    ureg = pint.UnitRegistry()
+    # Quantify the DataFrame column with the original units
+    lengthm = geofabric[rivlen_name].values * ureg(length_in_units)
+    # Convert to the desired units
+    geofabric['rivlength_m'] = lengthm.to(length_out_units).magnitude
+
+    # Initialize a unit registry
+    ureg = pint.UnitRegistry()
+    # Quantify the DataFrame column with the original units
+    area_m2 = geofabric[area_name].values * ureg(area_in_units)
+    # Convert to the desired units
+    geofabric['area_m2'] = area_m2.to(area_out_units).magnitude
 
     # read soil and landcover data
     soil_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_soil_classes.csv'))
     # reorder df to follow the same order as the hru in the forcing file
-    soil_stats = soil_stats.set_index('COMID').loc[geofabric['COMID']].reset_index()
+    soil_stats = soil_stats.set_index(basinID).loc[geofabric[basinID]].reset_index()
     # rename majority column
     soil_stats = soil_stats.rename(columns={'majority': 'soil_majority'})
 
     landuse_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv'))
     # reorder df to follow the same order as the hru in the forcing file
-    landuse_stats = landuse_stats.set_index('COMID').loc[geofabric['COMID']].reset_index()
+    landuse_stats = landuse_stats.set_index(basinID).loc[geofabric[basinID]].reset_index()
     # rename majority column
     landuse_stats = landuse_stats.rename(columns={'majority': 'landuse_majority'})
 
-    soil_landuse_stats = landuse_stats.merge(soil_stats, on='COMID')
-
-    ######---------------------------
-    # link landuse and soil to vegtbl and soiltbl
-    # link NALCMS to USGS ids in the VEGPARM.TBL
-    # Manually matched NALCMS to USGS land cover types
-    matched_landuse = [
-        (0, 'Unknown', None, None),
-        (1, 'Temperate or sub-polar needleleaf forest', 14, 'Evergreen Needleleaf Forest'),
-        (2, 'Sub-polar taiga needleleaf forest', 12, 'Deciduous Needleleaf Forest'),
-        (3, 'Tropical or sub-tropical broadleaf evergreen forest', 13, 'Evergreen Broadleaf Forest'),
-        (4, 'Tropical or sub-tropical broadleaf deciduous forest', 11, 'Deciduous Broadleaf Forest'),
-        (5, 'Temperate or sub-polar broadleaf deciduous forest', 11, 'Deciduous Broadleaf Forest'),
-        (6, 'Mixed forest', 15, 'Mixed Forest'),
-        (7, 'Tropical or sub-tropical shrubland', 8, 'Shrubland'),
-        (8, 'Temperate or sub-polar shrubland', 8, 'Shrubland'),
-        (9, 'Tropical or sub-tropical grassland', 10, 'Savanna'),
-        (10, 'Temperate or sub-polar grassland', 7, 'Grassland'),
-        (11, 'Sub-polar or polar shrubland-lichen-moss', 8, 'Shrubland'),
-        (12, 'Sub-polar or polar grassland-lichen-moss', 7, 'Grassland'),
-        (13, 'Sub-polar or polar barren-lichen-moss', 19, 'Barren or Sparsely Vegetated'),
-        (14, 'Wetland', 17, 'Herbaceous Wetland'),
-        (15, 'Cropland', 2, 'Dryland Cropland and Pasture'),
-        (16, 'Barren lands', 19, 'Barren or Sparsely Vegetated'),
-        (17, 'Urban', 1, 'Urban and Built-Up Land'),
-        (18, 'Water', 16, 'Water Bodies'),
-        (19, 'Snow and Ice', 24, 'Snow or Ice')
-    ]
-
-    # Create DataFrame
-    matched_lanuse = pd.DataFrame(matched_landuse, columns=['NALCMS_ID', 'NALCMS_Description', 'USGS_ID', 'USGS_Description'])
-
-    # Create a dictionary for mapping NALCMS IDs to USGS IDs
-    landcover2summa = dict(zip(matched_lanuse['NALCMS_ID'], matched_lanuse['USGS_ID']))
-
-    # link NALCMS to USGS ids in the VEGPARM.TBL
-    # Manually matched soilgrid to ROSETTA types
-    matched_soils = [
-        (1, 'clay', 1, 'CLAY'),
-        (2, 'silty clay', 10, 'SILTY CLAY'),
-        (3, 'sandy clay', 6, 'SANDY CLAY'),
-        (4, 'clay loam', 2, 'CLAY LOAM'),
-        (5, 'silty clay loam', 11, 'SILTY CLAY LOAM'),
-        (6, 'sandy clay loam', 7, 'SANDY CLAY LOAM'),
-        (7, 'loam', 3, 'LOAM'),
-        (8, 'silty loam', 12, 'SILT LOAM'),
-        (9, 'sandy loam', 8, 'SANDY LOAM'),
-        (10, 'silt', 9, 'SILT'),
-        (11, 'loamy sand', 4, 'LOAMY SAND'),
-        (12, 'sand', 5, 'SAND')
-    ]
-
-    # Create DataFrame
-    matched_soils = pd.DataFrame(matched_soils, columns=['Soilgrid_ID', 'Soilgrid_Description', 'ROSETTA_ID', 'ROSETTA_Description'])
-    # Create a dictionary for mapping Soilgrid IDs to ROSETTA IDs
-    soil2summa = dict(zip(matched_soils['Soilgrid_ID'], matched_soils['ROSETTA_ID']))
-    ######---------------------------
+    soil_landuse_stats = landuse_stats.merge(soil_stats, on=basinID)
     
     # get the fraction for land cover for each row
     hru_info = pd.DataFrame(columns=['hru2gruId', 'hruId'])
@@ -267,21 +123,20 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
         # Normalize the array so that the sum of its values equals 1
         normalized_frac_vals = frac_vals / np.sum(frac_vals)
         nhru =len(frac_number)
-        # hru2gruId = np.repeat(soil_landuse_stats['COMID'][index], nhru)
-        # hruId = np.arange(nhru)+k
-        # HRUarea = normalized_frac_vals * cat['unitarea'][index]
-        # vegTypeIndex = frac_number
+        
         # construct the gru/hru df
         hru_info = pd.concat([hru_info, pd.DataFrame({
-                                        'hru2gruId': np.repeat(soil_landuse_stats['COMID'][index], nhru),
+                                        'hru2gruId': np.repeat(soil_landuse_stats[basinID][index], nhru),
                                         'hruId': np.arange(nhru)+k,
                                         'downHRUindex': np.zeros(nhru),
-                                        'HRUarea': normalized_frac_vals * geofabric['unitarea'][index]*1e6,
-                                        'vegTypeIndex': list(map(landcover2summa.get, frac_number)),
-                                        'soilTypeIndex': np.repeat(list(map(soil2summa.get, [soil_landuse_stats['soil_majority'][index]])), nhru),
+                                        # 'HRUarea': normalized_frac_vals * geofabric[area_name][index]*1e6,
+                                        'HRUarea': normalized_frac_vals * geofabric['area_m2'][index],
+                                        'vegTypeIndex': list(map(landcover_mapping.get, frac_number)),
+                                        'soilTypeIndex': np.repeat(list(map(soil_mapping.get, [soil_landuse_stats['soil_majority'][index]])), nhru),
                                         'slopeTypeIndex': np.ones(nhru),
                                         'elevation': np.repeat(geofabric['mean_elev'][index], nhru),
-                                        'contourLength': normalized_frac_vals * geofabric['lengthkm'][index]*1000,
+                                        # 'contourLength': normalized_frac_vals * geofabric[rivlen_name][index]*1000,
+                                        'contourLength': normalized_frac_vals * geofabric['rivlength_m'][index],
                                         'latitude': np.repeat(soil_landuse_stats['lat'][index], nhru),
                                         'longitude': np.repeat(soil_landuse_stats['lon'][index], nhru),
                                         'mHeight': np.ones(nhru)*40,
@@ -297,7 +152,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     attr ['hruId']          = xr.DataArray(hru_info['hruId'].values, dims=('hru'), 
                                             attrs={'long_name': 'Index of hydrological response units (HRU)', 'units': '-'})
 
-    attr ['gruId']          = xr.DataArray(geofabric['COMID'].values, dims=('gru'),
+    attr ['gruId']          = xr.DataArray(geofabric[basinID].values, dims=('gru'),
                                             attrs={'long_name': 'Index of group of response unit (GRU)', 'units': '-'})
 
     attr ['hru2gruId']      = xr.DataArray(hru_info['hru2gruId'].values, dims=('hru'),
@@ -350,25 +205,26 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
         
         if not os.path.isdir(path_to_save+'mizuroute/mizuroute_results/'):
             os.makedirs(path_to_save+'mizuroute/mizuroute_results/')
+        
         # Create a new xarray dataset
         mizuroute = xr.Dataset()
 
         # define gru dimension
-        mizuroute ['gru']           = xr.DataArray(geofabric['COMID'].values, dims=('gru'))
+        mizuroute ['gru']           = xr.DataArray(geofabric[basinID].values, dims=('gru'))
         # prepare other topo information
-        mizuroute ['gruId']          = xr.DataArray(geofabric['COMID'].values, dims=('gru'),
+        mizuroute ['gruId']          = xr.DataArray(geofabric[basinID].values, dims=('gru'),
                                                 attrs={'long_name': 'Index of group of response unit (GRU)', 'units': '-'})
     
-        mizuroute ['length']  = xr.DataArray(geofabric['lengthkm'].values*1000, dims=('gru'),
+        mizuroute ['rivlength']  = xr.DataArray(geofabric['rivlength_m'].values, dims=('gru'),
                                             attrs={'long_name': 'river segment length of GRU', 'units': 'm'})
         
-        mizuroute ['GRUarea']        = xr.DataArray(geofabric['unitarea'].values*1e6, dims=('gru'),
+        mizuroute ['GRUarea']        = xr.DataArray(geofabric['area_m2'].values, dims=('gru'),
                                             attrs={'long_name': 'Area of each GRU', 'units': 'm^2'})
 
         mizuroute ['tan_slope']      = xr.DataArray(geofabric['slope'].values, dims=('gru'),
                                             attrs={'long_name': 'Average slope of GRU', 'units': 'm/m'})
         
-        mizuroute ['NextDownID']      = xr.DataArray(geofabric['NextDownID'].values, dims=('gru'),
+        mizuroute ['NextDownID']      = xr.DataArray(geofabric[nextDownID].values, dims=('gru'),
                                             attrs={'long_name': 'Next downstream gruId', 'units': '-'})
         # write attribute file
         if os.path.isfile(path_to_save+'mizuroute/'+'mizuroute_domain.nc'):
@@ -382,6 +238,99 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     # return the attribute file
     return(attr)
 #################################
+# write summa forcing from MESH forcing
+def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output, attr, geofabric_mapping):
+    # get basin ID field from the geofabric_mapping
+    basinID = geofabric_mapping['basinID']['in_varname']
+
+    print('Merging easymore outputs to one NetCDF file \n')
+    # Replace with your file path pattern
+    easymore_nc_files = sorted(glob.glob(easymore_output+'/*.nc'))
+    # split the files in batches as cdo cannot mergetime long list of file names
+    batch_size = 20
+    # avoid splitting files if their number is too small
+    if(len(easymore_nc_files) < batch_size):
+        batch_size = len(easymore_nc_files)
+    files_split = np.array_split(easymore_nc_files,batch_size)
+    cdo_obj = cdo.Cdo()  # CDO object
+    intermediate_files = []
+
+    # split files into intermediate files
+    # Combine in batches
+    with alive_bar(batch_size, force_tty=True) as bar:
+        for i in range(batch_size):
+            batch_files = files_split[i].tolist()
+            batch_output = f'forcing_batch_{i}.nc'
+            cdo_obj.mergetime(input=batch_files, output=batch_output)
+            intermediate_files.append(batch_output)
+            bar()
+
+    # Combine intermediate results into one netcdf file
+    cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
+
+    # Clean up intermediate files if needed
+    for f in intermediate_files:
+        os.remove(f)
+    # open the forcing file
+    forcing = xr.open_dataset('RDRS_forcing.nc')
+    # convert calendar to 'standard'
+    forcing = forcing.convert_calendar('standard')
+    # The data are in UTC time and they need to be shifted -6h to local time
+    forcing['time'] = forcing['time'] + pd.Timedelta(hours=timeshift)
+
+    # do the units
+    # RDRS's original variable units
+
+    # Create the new dictionary
+    RDRS_units = {v['in_varname']: v['in_units'] for v in forcing_units.values()}
+
+    # SUMMA's units
+    summa_units = {v['in_varname']: v['out_units'] for v in forcing_units.values()}
+
+    # Define the unit registries
+    forcing = forcing.pint.quantify(RDRS_units)  # Add unit attributes of the original RDRS
+    forcing = forcing.pint.to(summa_units)  # convert the units to summa units
+    # remove pint units as they conflict with writing
+    forcing = forcing.pint.dequantify()
+    # rename the dictionary
+    # Create the new dictionary
+    rename_dictionary = {v['in_varname']: k for k, v in forcing_units.items()}
+
+    forcing = forcing.rename_vars(rename_dictionary)
+    # time step of the data in seconds
+    forcing['data_step'] = (forcing['time'][1].values - forcing['time'][0].values).astype('timedelta64[s]').astype(int)
+    
+    # create hru forcing
+    forcing = forcing.sel(COMID=attr['hru2gruId'].values)
+    forcing = forcing.rename_dims({basinID: 'hru'})
+    forcing = forcing.rename_vars({basinID: 'hru'})
+    # set values based on the actual hruId
+    forcing.coords['hru'] = attr['hruId'].values
+    # Select the first time step (index 0) for lon and lat variables
+    forcing['longitude'] = forcing['longitude'].isel(time=0).drop_vars('time')
+    forcing['latitude'] = forcing['latitude'].isel(time=0).drop_vars('time')
+    # save to file
+    forcing.to_netcdf(path_to_save+'summa_forcing.nc')
+    # close the netcdf file
+    forcing.close()
+    
+    # replace T in the time unit with space
+
+    ncid = nc4.Dataset(path_to_save + 'summa_forcing.nc', 'r+')
+    
+    # Access the 'units' attribute and replace 'T' with a space
+    units_attribute = ncid['time'].units
+    units_attribute = units_attribute.replace('T', ' ')
+    
+    # Update the 'units' attribute in the netCDF file
+    ncid['time'].setncattr('units', units_attribute)
+    
+    # Close the netCDF file
+    ncid.close()
+    # remove RDRS forcing
+    os.remove('RDRS_forcing.nc')
+    return(xr.open_dataset(path_to_save + 'summa_forcing.nc'))
+######################
 def write_summa_paramtrial(attr, path_to_save):
     
     # Define dimensions
