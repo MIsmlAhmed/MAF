@@ -35,6 +35,7 @@ def sort_geofabric(geofabric, basinID, nextDownID):
     return geofabric
 
 ############################
+# write summa attribute and mizuRoute domain files
 def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, gistool_output, frac_threshold, hru_discr, 
                           geofabric_mapping, landcover_mapping, soil_mapping, write_mizuroute_domain):
     if not os.path.isdir(path_to_save):
@@ -50,7 +51,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     length_out_units = geofabric_mapping['rivlen']['out_units']
 
     # prepare data by merging the spatial fields into one dataframe
-    # read merit geofabric
+    # read geofabric
     # read rivers
     riv = gpd.read_file(rivers_shapefile)
 
@@ -60,10 +61,10 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     # read elevation stats
     elev_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_elv.csv'))
 
-    #rename columns except COMID
+    #rename columns except basinID
     elev_stats = elev_stats.rename(columns=lambda x: x + '_elev' if x != basinID else x)
 
-    # merge riv, cat, and elev_stat in one dataframe on COMID
+    # merge riv, cat, and elev_stat in one dataframe on basinID
     geofabric = riv.merge(cat, on=basinID)
     geofabric = geofabric.merge(elev_stats, on=basinID)
     geofabric = geofabric.drop(columns=['geometry_x', 'hillslope_x', 'hillslope_y', 'geometry_y'])
@@ -88,13 +89,13 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
 
     # read soil and landcover data
     soil_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_soil_classes.csv'))
-    # reorder df to follow the same order as the hru in the forcing file
+    # reorder df to follow the same order as the geofabric df
     soil_stats = soil_stats.set_index(basinID).loc[geofabric[basinID]].reset_index()
     # rename majority column
     soil_stats = soil_stats.rename(columns={'majority': 'soil_majority'})
 
     landuse_stats = pd.read_csv(os.path.join(gistool_output, 'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv'))
-    # reorder df to follow the same order as the hru in the forcing file
+    # reorder df to follow the same order as the geofabric df
     landuse_stats = landuse_stats.set_index(basinID).loc[geofabric[basinID]].reset_index()
     # rename majority column
     landuse_stats = landuse_stats.rename(columns={'majority': 'landuse_majority'})
@@ -105,7 +106,7 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
     hru_info = pd.DataFrame(columns=['hru2gruId', 'hruId'])
     k = 1
     for index, row in soil_landuse_stats.iterrows():
-        # hru discretization is based on landcover (default)
+        # hru discretization is based on landcover
         if(hru_discr=='landcover'):
             fractions = [col for col in soil_landuse_stats.columns if col.startswith('frac') and row[col] > frac_threshold]
             frac_vals= row[fractions].to_list()
@@ -129,13 +130,11 @@ def write_summa_attribute(path_to_save, subbasins_shapefile, rivers_shapefile, g
                                         'hru2gruId': np.repeat(soil_landuse_stats[basinID][index], nhru),
                                         'hruId': np.arange(nhru)+k,
                                         'downHRUindex': np.zeros(nhru),
-                                        # 'HRUarea': normalized_frac_vals * geofabric[area_name][index]*1e6,
                                         'HRUarea': normalized_frac_vals * geofabric['area_m2'][index],
                                         'vegTypeIndex': list(map(landcover_mapping.get, frac_number)),
                                         'soilTypeIndex': np.repeat(list(map(soil_mapping.get, [soil_landuse_stats['soil_majority'][index]])), nhru),
                                         'slopeTypeIndex': np.ones(nhru),
                                         'elevation': np.repeat(geofabric['mean_elev'][index], nhru),
-                                        # 'contourLength': normalized_frac_vals * geofabric[rivlen_name][index]*1000,
                                         'contourLength': normalized_frac_vals * geofabric['rivlength_m'][index],
                                         'latitude': np.repeat(soil_landuse_stats['lat'][index], nhru),
                                         'longitude': np.repeat(soil_landuse_stats['lon'][index], nhru),
@@ -266,29 +265,28 @@ def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output,
             bar()
 
     # Combine intermediate results into one netcdf file
-    cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
+    cdo_obj.mergetime(input=intermediate_files, output='merged_forcing.nc')
 
     # Clean up intermediate files if needed
     for f in intermediate_files:
         os.remove(f)
     # open the forcing file
-    forcing = xr.open_dataset('RDRS_forcing.nc')
+    forcing = xr.open_dataset('merged_forcing.nc')
     # convert calendar to 'standard'
     forcing = forcing.convert_calendar('standard')
     # The data are in UTC time and they need to be shifted -6h to local time
     forcing['time'] = forcing['time'] + pd.Timedelta(hours=timeshift)
 
     # do the units
-    # RDRS's original variable units
 
     # Create the new dictionary
-    RDRS_units = {v['in_varname']: v['in_units'] for v in forcing_units.values()}
+    inputForcingUnits = {v['in_varname']: v['in_units'] for v in forcing_units.values()}
 
     # SUMMA's units
     summa_units = {v['in_varname']: v['out_units'] for v in forcing_units.values()}
 
     # Define the unit registries
-    forcing = forcing.pint.quantify(RDRS_units)  # Add unit attributes of the original RDRS
+    forcing = forcing.pint.quantify(inputForcingUnits)  # Add unit attributes of the original RDRS
     forcing = forcing.pint.to(summa_units)  # convert the units to summa units
     # remove pint units as they conflict with writing
     forcing = forcing.pint.dequantify()
@@ -301,7 +299,7 @@ def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output,
     forcing['data_step'] = (forcing['time'][1].values - forcing['time'][0].values).astype('timedelta64[s]').astype(int)
     
     # create hru forcing
-    forcing = forcing.sel(COMID=attr['hru2gruId'].values)
+    forcing = forcing.sel({basinID: attr['hru2gruId'].values})
     forcing = forcing.rename_dims({basinID: 'hru'})
     forcing = forcing.rename_vars({basinID: 'hru'})
     # set values based on the actual hruId
@@ -328,7 +326,7 @@ def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output,
     # Close the netCDF file
     ncid.close()
     # remove RDRS forcing
-    os.remove('RDRS_forcing.nc')
+    os.remove('merged_forcing.nc')
     return(xr.open_dataset(path_to_save + 'summa_forcing.nc'))
 ######################
 def write_summa_paramtrial(attr, path_to_save):

@@ -36,13 +36,14 @@ def sort_geodata(geodata):
     geodata = geodata.sort_values(by='n_ds_subbasins', ascending=False, ignore_index=True)
     geodata = geodata.drop(columns=['n_ds_subbasins'])
     return geodata
+#---------------------------------------------------------------
+#---------------------------------------------------------------
 
-# write HYPE forcing from MESH nc file
-
+# write HYPE forcing from easymore nc files
 def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapping, path_to_save):
     if not os.path.isdir(path_to_save):
         os.makedirs(path_to_save)
-
+    # function to get daily values from hourly timeseries
     def convert_hourly_to_daily (input_file_name,
                                  variable_in,
                                  variable_out,
@@ -60,7 +61,6 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapp
         ds = xr.open_dataset(input_file_name)
         # set id as integer
         ds.coords[var_id] = ds.coords[var_id].astype(int)
-        # ds = ds.rename({'subbasin': 'id'})
 
         # drop all the other variables except the mentioned varibale, time and id
         variables_to_keep = [variable_in, var_time]
@@ -164,25 +164,25 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapp
             bar()
 
     # Combine intermediate results into one netcdf file
-    cdo_obj.mergetime(input=intermediate_files, output='RDRS_forcing.nc')
+    cdo_obj.mergetime(input=intermediate_files, output='merged_forcing.nc')
 
     # Clean up intermediate files if needed
     for f in intermediate_files:
         os.remove(f)
 
     # open the forcing file
-    forcing = xr.open_dataset('RDRS_forcing.nc')
+    forcing = xr.open_dataset('merged_forcing.nc')
     # convert calendar to 'standard'
     forcing = forcing.convert_calendar('standard')
-    # The data are in UTC time and they need to be shifted -6h to local time
+    # The data are in UTC time and they need to be shifted by "timeshift" to local time
     forcing['time'] = forcing['time'] + pd.Timedelta(hours=timeshift)
     # write to netcdf
-    forcing.to_netcdf('RDRS_forcing.nc')
+    forcing.to_netcdf('merged_forcing.nc')
     forcing.close()
     ############
     print('Get average daily values for HYPE \n')
     basinID = geofabric_mapping['basinID']['in_varname']
-    ds1= convert_hourly_to_daily('RDRS_forcing.nc',
+    ds1= convert_hourly_to_daily('merged_forcing.nc',
                                 forcing_units['temperature']['in_varname'],
                                 'TMAXobs',
                                 var_unit_conversion = {'in_unit':forcing_units['temperature']['in_units'],'out_unit':forcing_units['temperature']['out_units']},
@@ -193,7 +193,7 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapp
                                 # output_file_name_nc = path_to_save+'TMAXobs.nc',
                                 output_file_name_txt = path_to_save+'TMAXobs.txt')
 
-    ds2= convert_hourly_to_daily('RDRS_forcing.nc',
+    ds2= convert_hourly_to_daily('merged_forcing.nc',
                                 forcing_units['temperature']['in_varname'],
                                 'TMINobs',
                                 var_unit_conversion = {'in_unit':forcing_units['temperature']['in_units'],'out_unit':forcing_units['temperature']['out_units']},
@@ -204,7 +204,7 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapp
                                 # output_file_name_nc = path_to_save+'TMINobs.nc',
                                 output_file_name_txt = path_to_save+'TMINobs.txt')
 
-    ds3= convert_hourly_to_daily('RDRS_forcing.nc',
+    ds3= convert_hourly_to_daily('merged_forcing.nc',
                                 forcing_units['temperature']['in_varname'],
                                 'Tobs',
                                 var_unit_conversion = {'in_unit':forcing_units['temperature']['in_units'],'out_unit':forcing_units['temperature']['out_units']},
@@ -215,7 +215,7 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapp
                                 # output_file_name_nc = path_to_save+'Tobs.nc',
                                 output_file_name_txt = path_to_save+'Tobs.txt')
 
-    ds4= convert_hourly_to_daily('RDRS_forcing.nc',
+    ds4= convert_hourly_to_daily('merged_forcing.nc',
                                 forcing_units['precipitation']['in_varname'],
                                 'Pobs',
                                 var_unit_conversion = {'in_unit':forcing_units['precipitation']['in_units'],'out_unit':forcing_units['precipitation']['out_units']},
@@ -227,9 +227,11 @@ def write_hype_forcing(easymore_output, timeshift, forcing_units, geofabric_mapp
                                 output_file_name_txt = path_to_save+'Pobs.txt')
     
     # remove the merged netcdf file
-    os.remove('RDRS_forcing.nc')
+    os.remove('merged_forcing.nc')
 
-################################################################
+#---------------------------------------------------------------
+#---------------------------------------------------------------
+
 # write GeoData and GeoClass files
 def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, frac_threshold, geofabric_mapping, path_to_save):
     
@@ -266,9 +268,6 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
         combinations_set = set(combinations)
         combinations_set_all.update(combinations_set)
 
-    # print(combinations_set_all)
-    # print(len(combinations_set_all))
-
     data_list = [{'landcover': item[0], 'soil': item[1]} for item in combinations_set_all]
 
     # Create a pandas DataFrame from the list of dictionaries
@@ -276,7 +275,6 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
 
     combination ['SLC'] = 0
     combination ['SLC'] = np.arange(len(combination))+1
-    # renumber landcover and soil sequentially
     
     #######################
     landcover_type_prepared = landcover_type.copy()
@@ -311,7 +309,7 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     riv = gpd.read_file(rivers_shapefile)
     riv.sort_values(by=basinID).reset_index(drop=True)
     riv['lengthm'] = 0.00
-    # riv['lengthm'] = riv[geofabric_mapping['rivlen']['in_varname']] * 1000
+    
     rivlen_name = geofabric_mapping['rivlen']['in_varname']
     length_in_units = geofabric_mapping['rivlen']['in_units']
     length_out_units = geofabric_mapping['rivlen']['out_units']
@@ -365,16 +363,13 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
 
     # Rename the columns based on the dictionary
     landcover_type_prepared = landcover_type_prepared.rename(columns=column_name_mapping)
-    # landcover_type_prepared
 
-    #
     slc_columns = [col for col in landcover_type_prepared.columns if col.startswith('SLC_')]
 
     # Sort the columns as per your requirements
-    column_order = ['subid', 'maindown', 'area', 'latitude', 'longitude', 'elev_mean', 'slope_mean', 'rivlen'] + slc_columns #+ ['uparea']
+    column_order = ['subid', 'maindown', 'area', 'latitude', 'longitude', 'elev_mean', 'slope_mean', 'rivlen'] + slc_columns
 
     landcover_type_prepared = landcover_type_prepared[column_order]
-    # landcover_type_prepared
     #######################
     # sort geodata file from upstream to downstream
     landcover_type_prepared = sort_geodata(landcover_type_prepared)
@@ -386,9 +381,8 @@ def write_hype_geo_files(gistool_output, subbasins_shapefile, rivers_shapefile, 
     # Normalize SLC values so that they sum to 1 for each row
     landcover_type_prepared[slc_columns] = landcover_type_prepared[slc_columns].div(landcover_type_prepared[slc_columns].sum(axis=1), axis=0)
 
-    # landcover_type_prepared = landcover_type_prepared.drop(columns=['uparea'])
+
     landcover_type_prepared.to_csv(path_to_save+'GeoData.txt', sep='\t', index=False)
-    # landcover_type_prepared
     #######################
     
     # write geoclass file
@@ -500,7 +494,7 @@ def write_hype_par_file(path_to_save):
         os.remove(output_file)
     par_file = """!!	=======================================================================================================									
 !! Parameter file for:										
-!! HYPE -- Generated by the Model Agnostic Framework										
+!! HYPE -- Generated by the Model Agnostic Framework (hypeflow)									
 !!	=======================================================================================================									
 !!										
 !!	------------------------									
