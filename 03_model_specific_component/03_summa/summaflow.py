@@ -304,9 +304,10 @@ def write_summa_forcing(path_to_save, timeshift, forcing_units, easymore_output,
     forcing = forcing.rename_vars({basinID: 'hru'})
     # set values based on the actual hruId
     forcing.coords['hru'] = attr['hruId'].values
-    # Select the first time step (index 0) for lon and lat variables
-    forcing['longitude'] = forcing['longitude'].isel(time=0).drop_vars('time')
-    forcing['latitude'] = forcing['latitude'].isel(time=0).drop_vars('time')
+    # Select the first time step (index 0) for lon and lat variables if time is in the dims
+    if 'time' in forcing['longitude'].dims:
+        forcing['longitude'] = forcing['longitude'].isel(time=0).drop_vars('time')
+        forcing['latitude'] = forcing['latitude'].isel(time=0).drop_vars('time')
     # save to file
     forcing.to_netcdf(path_to_save+'summa_forcing.nc')
     # close the netcdf file
